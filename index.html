@@ -239,14 +239,14 @@ tr:hover td{background:rgba(45,140,240,.03)}
 const JOBS = [
   { id:'desempregado', title:'Desempregado', salary:0, req:{month:0,balance:0} },
   { id:'freelancer', title:'Freelancer', salary:1800, req:{month:0,balance:0} },
-  { id:'auxiliar', title:'Auxiliar Administrativo', salary:2400, req:{month:2,balance:0} },
-  { id:'analista_jr', title:'Analista Júnior', salary:4000, req:{month:6,balance:5000} },
-  { id:'analista_sr', title:'Analista Sênior', salary:7000, req:{month:12,balance:20000} },
-  { id:'gerente', title:'Gerente de Área', salary:13000, req:{month:24,balance:60000} },
-  { id:'gerente_sr', title:'Gerente Sênior', salary:18000, req:{month:30,balance:120000} },
-  { id:'diretor', title:'Diretor', salary:24000, req:{month:36,balance:180000} },
-  { id:'vp', title:'Vice-Presidente', salary:48000, req:{month:60,balance:500000} },
-  { id:'ceo', title:'CEO', salary:90000, req:{month:84,balance:1500000} }
+  { id:'auxiliar', title:'Auxiliar Administrativo', salary:2400, req:{month:3,balance:0} },
+  { id:'analista_jr', title:'Analista Júnior', salary:4000, req:{month:12,balance:5000} },
+  { id:'analista_sr', title:'Analista Sênior', salary:7000, req:{month:24,balance:20000} },
+  { id:'gerente', title:'Gerente de Área', salary:13000, req:{month:48,balance:60000} },
+  { id:'gerente_sr', title:'Gerente Sênior', salary:18000, req:{month:72,balance:120000} },
+  { id:'diretor', title:'Diretor', salary:24000, req:{month:120,balance:180000} },
+  { id:'vp', title:'Vice-Presidente', salary:48000, req:{month:180,balance:500000} },
+  { id:'ceo', title:'CEO', salary:90000, req:{month:300,balance:1500000} }
 ];
 
 const FIXED_INCOME = [
@@ -797,7 +797,7 @@ function renderCarreira() {
   if(G.jobSearch) {
     const sj = JOBS.find(x=>x.id===G.jobSearch.jobId);
     const level = JOBS.findIndex(x=>x.id===G.jobSearch.jobId);
-    const chance = Math.min(95, Math.round((Math.max(5, 40 - level * 4) + G.jobSearch.monthsSearching * 8) * 10) / 10);
+    const chance = Math.min(95, Math.round((Math.max(2, 35 - level * 4.5) + G.jobSearch.monthsSearching * 5) * 10) / 10);
     searchHTML = `<div class="card" style="border-color:var(--yellow)">
       <div class="card-title"><i class="fa-solid fa-spinner fa-spin"></i> Buscando Emprego</div>
       <div style="font-size:.9rem;margin-bottom:4px">Candidatando-se para: <strong>${sj?sj.title:'---'}</strong></div>
@@ -827,7 +827,8 @@ function renderCarreira() {
     companyHTML = G.companies.map((c, idx) => {
       const phase = c.months <= 6 ? 'Maturação' : 'Ativa';
       const phaseColor = c.months <= 6 ? 'var(--yellow)' : 'var(--green)';
-      return `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-building"></i> Empresa ${idx+1}</div>
+      const cname = c.name || 'Empresa ' + (idx+1);
+      return `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-building"></i> ${cname}</div>
         <div class="flex-between"><span>Fase:</span><span style="color:${phaseColor};font-weight:600">${phase} (${c.months} meses)</span></div>
         ${c.months > 6 ? `<div class="flex-between mt-2"><span>Último lucro:</span><span class="mono ${(c.lastProfit||0)>=0?'sc-green':'sc-red'}">${fmtFull(c.lastProfit||0)}</span></div>` : `<div class="mt-2" style="font-size:.82rem;color:var(--yellow)">Custo de maturação: ${fmtFull(5000)}/mês por mais ${6-c.months} meses</div>`}
         <div class="mt-3 flex-between">
@@ -1096,27 +1097,30 @@ function cancelJobSearch() {
 
 function openCompany() {
   if(G.balance < 100000) return;
+  const name = prompt('Nome da empresa:', 'Minha Empresa ' + (G.companies.length + 1));
+  if(!name || !name.trim()) return;
   G.balance -= 100000;
-  G.companies.push({ months:1, lastProfit:0 });
-  toast('Empresa aberta! Fase de maturação: 6 meses com custos de '+fmtFull(5000)+'/mês', 'blue');
+  G.companies.push({ name:name.trim(), months:1, lastProfit:0 });
+  toast(`Empresa "${name.trim()}" aberta! Fase de maturação: 6 meses com custos de `+fmtFull(5000)+'/mês', 'blue');
   saveGame(); render();
 }
 
 function closeCompany(idx) {
   if(idx === undefined && G.companies.length === 1) idx = 0;
   if(idx === undefined || !G.companies[idx]) return;
+  const name = G.companies[idx].name || 'Empresa';
   G.companies.splice(idx, 1);
-  toast('Empresa fechada.', 'yellow');
+  toast(`${name} fechada.`, 'yellow');
   saveGame(); render();
 }
 
 function sellCompany(idx) {
   const c = G.companies[idx];
   if(!c) return;
-  if(c.months <= 6) return toast('Empresa ainda em maturação não pode ser vendida.', 'red');
+  if(c.months <= 6) return toast((c.name||'Empresa')+' ainda em maturação não pode ser vendida.', 'red');
   const value = Math.round(50000 + Math.min(c.months, 120) * 2000 + Math.max(0, (c.lastProfit||0)) * 6);
   G.balance += value;
-  toast(`Empresa vendida por ${fmtFull(value)}!`, 'green');
+  toast(`${c.name||'Empresa'} vendida por ${fmtFull(value)}!`, 'green');
   G.companies.splice(idx, 1);
   saveGame(); render();
 }
@@ -1417,6 +1421,30 @@ function advanceMonth() {
     if(ev.text.includes('Nasceu seu filho')) {
       G.children.push({ birthMonth: G.month });
     }
+    if(ev.text.includes('Divórcio')) {
+      const nw = calcNetWorth();
+      const penalty = Math.round(nw * 0.25);
+      G.balance = Math.max(0, G.balance - penalty);
+      S.events.push(`<i class="fa-solid fa-heart-broken" style="color:var(--red)"></i> Divórcio: perda de 25% do patrimônio! <span style="color:var(--red)">-${fmtFull(penalty)}</span>`);
+      ['stocks','fiis','crypto'].forEach(cat => {
+        for(const t in G.inv[cat]) {
+          if(G.inv[cat][t].shares > 0) {
+            G.inv[cat][t].shares *= 0.75;
+            if(G.inv[cat][t].shares < 0.0001) { G.inv[cat][t].shares = 0; G.inv[cat][t].avgPrice = 0; }
+          }
+        }
+      });
+      if(G.properties.length > 0) {
+        const lp = randInt(0, G.properties.length - 1);
+        S.events.push(`<i class="fa-solid fa-house-crack" style="color:var(--red)"></i> ${G.properties[lp].name} ficou com o(a) ex-cônjuge!`);
+        G.properties.splice(lp, 1);
+      }
+      if(G.cars.length > 0) {
+        const lc = randInt(0, G.cars.length - 1);
+        S.events.push(`<i class="fa-solid fa-car-side" style="color:var(--red)"></i> ${G.cars[lc].name} ficou com o(a) ex-cônjuge!`);
+        G.cars.splice(lc, 1);
+      }
+    }
   }
 
   if(G.children.length > 0) {
@@ -1474,8 +1502,8 @@ function advanceMonth() {
   if(G.jobSearch) {
     G.jobSearch.monthsSearching++;
     const level = JOBS.findIndex(x=>x.id===G.jobSearch.jobId);
-    const baseChance = Math.max(5, 40 - level * 4);
-    const totalChance = Math.min(95, baseChance + G.jobSearch.monthsSearching * 8) / 100;
+    const baseChance = Math.max(2, 35 - level * 4.5);
+    const totalChance = Math.min(95, baseChance + G.jobSearch.monthsSearching * 5) / 100;
     if(Math.random() < totalChance) {
       const newJob = JOBS.find(x=>x.id===G.jobSearch.jobId);
       if(newJob) {
@@ -1640,6 +1668,7 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSummary(
     if(G.age === undefined) G.age = 18 + Math.floor((G.month - 1) / 12);
     if(!G.children) G.children = [];
     if(G.jobSearch === undefined) G.jobSearch = null;
+    if(G.companies) G.companies.forEach(c => { if(!c.name) c.name = 'Empresa'; });
     document.getElementById('welcome').classList.add('hidden');
     document.getElementById('game').style.display = 'block';
     render();
