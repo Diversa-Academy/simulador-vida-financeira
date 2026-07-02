@@ -362,6 +362,17 @@ const EVENTS = [
   { text:'Aniversário de 15 anos do filho — festa cara!', cost:8000 }
 ];
 
+const GOOD_EVENTS = [
+  { text:'Recebeu uma herança inesperada de um parente distante!', value:50000 },
+  { text:'Ganhou na loteria! Sorte grande!', value:80000 },
+  { text:'Recebeu um bônus no trabalho pelo desempenho excepcional.', value:15000 },
+  { text:'Encontrou uma oportunidade de investimento relâmpago.', value:12000 },
+  { text:'Ganhou um prêmio de cashback de programas de fidelidade.', value:5000 },
+  { text:'Recebeu restituição do imposto de renda maior que o esperado.', value:8000 },
+  { text:'Vendeu um item raro por um bom preço.', value:7000 },
+  { text:'Ganhou uma ação judicial inesperada.', value:30000 }
+];
+
 const HEALTH_EVENTS = [
   { text:'Problema cardíaco — internação de emergência.', cost:30000 },
   { text:'Diagnóstico de diabetes — gastos com tratamento.', cost:10000 },
@@ -416,6 +427,7 @@ function newGame(name) {
     prices, history,
     cars:[], properties:[],
     children:[],
+    married:false,
     jobSearch:null,
     loans:[], events:[],
     livingInProp:null,
@@ -482,6 +494,13 @@ function propertyExpenseMultiplier() {
   if(p.purchasePrice <= 900000) return 1.8;
   if(p.purchasePrice <= 2000000) return 2.2;
   return 3.0;
+}
+
+function householdSize() {
+  let n = 1;
+  if(G.married) n++;
+  G.children.forEach(c => { if(!c.independent) n++; });
+  return n;
 }
 
 function sparklineHTML(hist, color) {
@@ -761,28 +780,47 @@ function renderDashboard(nw) {
         ${allocHTML}
       </div>
     </div>
-    <div class="two-col section-gap">
-      <div class="card">
-        <div class="card-title"><i class="fa-solid fa-receipt"></i> Resumo de Despesas Fixas</div>
-        <table><tbody>
-          <tr><td>Aluguel</td><td class="mono" style="text-align:right">${rentFree}</td></tr>
-          <tr><td>Alimentação</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.food)}</td></tr>
-          <tr><td>Transporte</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.transport)}</td></tr>
-          <tr><td>Seguros</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.insurance)}</td></tr>
-          <tr><td>Contas (Água/Luz/Internet)</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.utilities)}</td></tr>
-          ${G.cars.length ? G.cars.map(c=>`<tr><td><span class="asset-name-cell">${assetIcon('car','',''+c.name)}Manut. ${c.name}</span></td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(c.cost)}</td></tr>`).join('') : ''}
-        </tbody></table>
+    <div class="two-col section-gap" style="align-items:stretch">
+      <div style="display:flex;flex-direction:column;height:100%">
+        <div class="card" style="flex-shrink:0">
+          <div class="card-title"><i class="fa-solid fa-users"></i> Família</div>
+          ${G.married ? '<div style="margin-bottom:4px"><i class="fa-solid fa-ring" style="color:var(--accent);margin-right:6px"></i> Casado(a)</div>' : '<div style="margin-bottom:4px;color:var(--muted)"><i class="fa-solid fa-user" style="margin-right:6px"></i> Solteiro(a)</div>'}
+          <div style="font-size:.78rem;color:var(--muted)">Pessoas na casa: <strong>${householdSize()}</strong></div>
+          ${G.children.length > 0 ? '<div style="margin-top:6px;font-size:.78rem;color:var(--muted)">Filhos:</div>' + G.children.map(c => {
+            const age = Math.floor((G.month - c.birthMonth) / 12);
+            return `<div style="font-size:.78rem;color:var(--text);margin-top:2px;display:flex;align-items:center;gap:4px"><i class="fa-solid fa-child" style="color:var(--yellow);font-size:.65rem"></i> ${c.name} — ${age} anos${c.independent?' <span class="badge badge-green">Independente</span>':''}</div>`;
+          }).join('') : '<div style="margin-top:6px;font-size:.78rem;color:var(--muted)"><i class="fa-solid fa-heart"></i> Nenhum filho ainda</div>'}
+        </div>
+        <div class="card section-gap" style="flex:1;overflow-y:auto;min-height:80px">
+          <div class="card-title"><i class="fa-solid fa-box"></i> Meus Bens</div>
+          ${G.cars.length > 0 ? '<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Carros:</div>' + G.cars.map(c => `<div style="font-size:.78rem;display:flex;align-items:center;gap:4px;margin-top:2px">${assetIcon('car','',c.name)}${c.name} — <span class="mono" style="color:var(--text)">${fmtFull(c.currentValue)}</span></div>`).join('') : ''}
+          ${G.properties.length > 0 ? '<div style="font-size:.78rem;color:var(--muted);margin-top:6px;margin-bottom:4px">Imóveis:</div>' + G.properties.map(p => `<div style="font-size:.78rem;display:flex;align-items:center;gap:4px;margin-top:2px">${assetIcon('property','',p.name)}${p.name} — <span class="mono" style="color:var(--text)">${fmtFull(p.currentValue)}</span>${G.livingInProp !== null && G.properties[G.livingInProp]===p?' <span class="badge badge-blue">Morando</span>':p.isRented?' <span class="badge badge-green">Alugado</span>':''}</div>`).join('') : ''}
+          ${!G.cars.length && !G.properties.length ? '<div style="font-size:.78rem;color:var(--muted)"><i class="fa-solid fa-box-open"></i> Nenhum bem adquirido ainda</div>' : ''}
+        </div>
       </div>
-      <div class="card"><div class="card-title"><i class="fa-solid fa-bolt"></i> Eventos Recentes</div>${evHTML}</div>
+      <div style="display:flex;flex-direction:column;height:100%">
+        <div class="card" style="flex-shrink:0">
+          <div class="card-title"><i class="fa-solid fa-receipt"></i> Despesas Fixas</div>
+          <table style="font-size:.8rem"><tbody>
+            <tr><td>Aluguel</td><td class="mono" style="text-align:right">${rentFree}</td></tr>
+            <tr><td>Alimentação</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.food)}</td></tr>
+            <tr><td>Transporte</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.transport)}</td></tr>
+            <tr><td>Seguros</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.insurance)}</td></tr>
+            <tr><td>Contas (Água/Luz/Internet)</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(G.expenses.utilities)}</td></tr>
+            ${G.cars.length ? G.cars.map(c=>`<tr><td style="display:flex;align-items:center;gap:4px">${assetIcon('car','',c.name)}Manut. ${c.name}</td><td class="mono" style="text-align:right;color:var(--red)">${fmtFull(c.cost)}</td></tr>`).join('') : ''}
+          </tbody></table>
+        </div>
+        <div class="card section-gap" style="flex:1;overflow-y:auto;min-height:80px">
+          <div class="card-title"><i class="fa-solid fa-bolt"></i> Eventos Recentes</div>
+          ${evHTML}
+        </div>
+      </div>
     </div>
-    <div class="card section-gap">
-      <div class="card-title"><i class="fa-solid fa-gauge-high"></i> Indicadores Macroeconômicos</div>
-      <div class="stat-grid" style="margin-bottom:0">
-        <div class="stat-card"><div class="sc-label">Taxa SELIC (a.a.)</div><div class="sc-value sc-yellow mono">${fmtN(G.selic)}%</div></div>
-        <div class="stat-card"><div class="sc-label">Inflação (a.a.)</div><div class="sc-value sc-red mono">${fmtN(G.inflation)}%</div></div>
-        <div class="stat-card"><div class="sc-label">Meses Jogados</div><div class="sc-value sc-accent mono">${G.month}</div></div>
-        <div class="stat-card"><div class="sc-label">Pico Patrimonial</div><div class="sc-value sc-green mono">${fmtFull(G.peakNetWorth)}</div></div>
-      </div>
+    <div class="stat-grid section-gap" style="margin-bottom:0">
+      <div class="stat-card"><div class="sc-label"><i class="fa-solid fa-chart-line"></i> Taxa SELIC (a.a.)</div><div class="sc-value sc-yellow mono">${fmtN(G.selic)}%</div></div>
+      <div class="stat-card"><div class="sc-label"><i class="fa-solid fa-fire"></i> Inflação (a.a.)</div><div class="sc-value sc-red mono">${fmtN(G.inflation)}%</div></div>
+      <div class="stat-card"><div class="sc-label"><i class="fa-solid fa-calendar"></i> Meses Jogados</div><div class="sc-value sc-accent mono">${G.month}</div></div>
+      <div class="stat-card"><div class="sc-label"><i class="fa-solid fa-trophy"></i> Pico Patrimonial</div><div class="sc-value sc-green mono">${fmtFull(G.peakNetWorth)}</div></div>
     </div>
   `;
 }
@@ -1379,15 +1417,16 @@ function advanceMonth() {
   if(fiiDiv > 0) { G.balance += fiiDiv; S.returns.fiiDividends = fiiDiv; }
 
   const propMult = propertyExpenseMultiplier();
+  const hSize = householdSize();
   let rent = G.livingInProp !== null ? 0 : G.expenses.rent;
-  let foodCost = Math.round(G.expenses.food * propMult);
-  let utilitiesCost = Math.round(G.expenses.utilities * propMult);
+  let foodCost = Math.round(G.expenses.food * propMult * (1 + (hSize - 1) * 0.35));
+  let utilitiesCost = Math.round(G.expenses.utilities * propMult * (1 + (hSize - 1) * 0.15));
   let fixedTotal = rent + foodCost + G.expenses.transport + G.expenses.insurance + utilitiesCost;
   G.balance -= fixedTotal; S.expenses.fixed = fixedTotal;
   if(rent > 0) S.expenses.rent = rent;
   else if(G.livingInProp !== null) S.income.noRent = G.expenses.rent;
-  if(propMult > 1) {
-    S.events.push(`<i class="fa-solid fa-house-chimney"></i> Despesas da casa (x${propMult.toFixed(1)}): comida ${fmtFull(foodCost)} + contas ${fmtFull(utilitiesCost)}`);
+  if(propMult > 1 || hSize > 1) {
+    S.events.push(`<i class="fa-solid fa-house-chimney"></i> Despesas da casa (x${propMult.toFixed(1)}, ${hSize} pessoa${hSize>1?'s':''}): comida ${fmtFull(foodCost)} + contas ${fmtFull(utilitiesCost)}`);
   }
 
   let carCost = 0;
@@ -1413,15 +1452,24 @@ function advanceMonth() {
   updatePrices();
 
   if(Math.random() < 0.15) {
-    const ev = EVENTS[randInt(0, EVENTS.length-1)];
+    let pool = EVENTS;
+    if(G.married) pool = pool.filter(e => !e.text.includes('Casamento'));
+    else pool = pool.filter(e => !e.text.includes('Divórcio'));
+    if(G.children.length === 0) pool = pool.filter(e => !e.text.includes('materiais escolares') && !e.text.includes('Aniversário de 15 anos'));
+    const ev = pool[randInt(0, pool.length-1)];
     const adj = Math.round(ev.cost * (1 + G.inflation/100));
     G.balance -= adj;
     S.events.push(`<i class="fa-solid fa-triangle-exclamation"></i> ${ev.text} <span style="color:var(--red)">-${fmtFull(adj)}</span>`);
     G.events.push(`Mês ${monthLabel(G.month)}: ${ev.text} -${fmtFull(adj)}`);
     if(ev.text.includes('Nasceu seu filho')) {
-      G.children.push({ birthMonth: G.month });
+      const cname = prompt('Nome do filho(a):', 'Filho(a) ' + (G.children.filter(c => !c.independent).length + 1));
+      G.children.push({ name: (cname&&cname.trim())||'Filho(a)', birthMonth: G.month, independent: false });
+    }
+    if(ev.text.includes('Casamento')) {
+      G.married = true;
     }
     if(ev.text.includes('Divórcio')) {
+      G.married = false;
       const nw = calcNetWorth();
       const penalty = Math.round(nw * 0.25);
       G.balance = Math.max(0, G.balance - penalty);
@@ -1447,6 +1495,23 @@ function advanceMonth() {
     }
   }
 
+  if(Math.random() < 0.05) {
+    const ge = GOOD_EVENTS[randInt(0, GOOD_EVENTS.length-1)];
+    const gain = Math.round(ge.value * (1 + G.inflation/100) * rand(0.8, 1.2));
+    G.balance += gain;
+    S.events.push(`<i class="fa-solid fa-clover" style="color:var(--green)"></i> ${ge.text} <span style="color:var(--green)">+${fmtFull(gain)}</span>`);
+    G.events.push(`Mês ${monthLabel(G.month)}: ${ge.text} +${fmtFull(gain)}`);
+  }
+
+  if(G.married && G.children.filter(c => !c.independent).length < 4 && Math.random() < 0.025) {
+    const cname = prompt('Nasceu mais um filho! Qual o nome?', 'Filho(a) ' + (G.children.filter(c => !c.independent).length + 1));
+    G.children.push({ name: (cname&&cname.trim())||'Filho(a)', birthMonth: G.month, independent: false });
+    const cost = Math.round(6000 * (1 + G.inflation/100));
+    G.balance -= cost;
+    S.events.push(`<i class="fa-solid fa-baby" style="color:var(--green)"></i> Nasceu ${cname?cname.trim():'filho(a)'}! Despesas: ${fmtFull(cost)}`);
+    G.events.push(`Mês ${monthLabel(G.month)}: Nasceu ${cname?cname.trim():'filho(a)'} -${fmtFull(cost)}`);
+  }
+
   if(G.children.length > 0) {
     G.children.forEach((child, idx) => {
       const childAge = Math.floor((G.month - child.birthMonth) / 12);
@@ -1455,25 +1520,26 @@ function advanceMonth() {
         const baseCost = 300 + childAge * 200;
         const cost = Math.round(baseCost * (1 + G.inflation/100));
         G.balance -= cost;
-        S.events.push(`<i class="fa-solid fa-cake-candles"></i> Aniversário de ${childAge} ${childAge===1?'ano':'anos'} do(a) filho(a) — despesas: ${fmtFull(cost)}`);
-        G.events.push(`Mês ${monthLabel(G.month)}: Aniversário filho(a) ${childAge} anos -${fmtFull(cost)}`);
+        S.events.push(`<i class="fa-solid fa-cake-candles"></i> Aniversário de ${childAge} anos de ${child.name} — despesas: ${fmtFull(cost)}`);
+        G.events.push(`Mês ${monthLabel(G.month)}: Aniversário de ${child.name} (${childAge} anos) -${fmtFull(cost)}`);
         if(childAge === 6) {
           const sc = Math.round(5000 * (1 + G.inflation/100));
           G.balance -= sc;
-          S.events.push(`<i class="fa-solid fa-school"></i> Filho(a) entrou na escola! Matrícula: ${fmtFull(sc)}`);
+          S.events.push(`<i class="fa-solid fa-school"></i> ${child.name} entrou na escola! Matrícula: ${fmtFull(sc)}`);
         }
         if(childAge === 15) {
           const pc = Math.round(8000 * (1 + G.inflation/100));
           G.balance -= pc;
-          S.events.push(`<i class="fa-solid fa-star"></i> Festa de 15 anos do(a) filho(a)! ${fmtFull(pc)}`);
+          S.events.push(`<i class="fa-solid fa-star"></i> Festa de 15 anos de ${child.name}! ${fmtFull(pc)}`);
         }
         if(childAge === 18) {
           const uc = Math.round(12000 * (1 + G.inflation/100));
           G.balance -= uc;
-          S.events.push(`<i class="fa-solid fa-graduation-cap"></i> Filho(a) entrou na faculdade! Custos: ${fmtFull(uc)}`);
+          S.events.push(`<i class="fa-solid fa-graduation-cap"></i> ${child.name} entrou na faculdade! Custos: ${fmtFull(uc)}`);
         }
-        if(childAge === 22) {
-          S.events.push(`<i class="fa-solid fa-briefcase"></i> Filho(a) se formou e agora é independente!`);
+        if(childAge === 23 && !child.independent) {
+          child.independent = true;
+          S.events.push(`<i class="fa-solid fa-plane"></i> ${child.name} saiu de casa — agora é independente!`);
         }
       }
     });
@@ -1667,6 +1733,8 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSummary(
     if(!G.companies) G.companies = [];
     if(G.age === undefined) G.age = 18 + Math.floor((G.month - 1) / 12);
     if(!G.children) G.children = [];
+    G.children.forEach(c => { if(!c.name) c.name = 'Filho(a)'; if(c.independent === undefined) c.independent = false; });
+    if(G.married === undefined) G.married = false;
     if(G.jobSearch === undefined) G.jobSearch = null;
     if(G.companies) G.companies.forEach(c => { if(!c.name) c.name = 'Empresa'; });
     document.getElementById('welcome').classList.add('hidden');
