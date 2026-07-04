@@ -398,7 +398,8 @@ const INV_SUBTABS = [
   { id:'tesouro', label:'Tesouro' },
   { id:'fiis', label:'FIIs' },
   { id:'acoes', label:'Ações' },
-  { id:'cripto', label:'Cripto' }
+  { id:'cripto', label:'Cripto' },
+  { id:'daytrade', label:'Day Trade' }
 ];
 
 /* ============================================================
@@ -423,6 +424,8 @@ function newGame(name) {
     selic:10.5, inflation:4.5,
     job:{ ...JOBS[0] },
     companies:[],
+    ipoStocks:[],
+    dayTrades:{},
     inv:{ savings:0, fixedIncome:[], treasurySelic:0, treasuryIpca:[], fiis:{}, stocks:{}, crypto:{} },
     prices, history,
     cars:[], properties:[],
@@ -870,11 +873,28 @@ function renderCarreira() {
       const phase = c.months <= 6 ? 'Maturação' : 'Ativa';
       const phaseColor = c.months <= 6 ? 'var(--yellow)' : 'var(--green)';
       const cname = c.name || 'Empresa ' + (idx+1);
-      return `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-building"></i> ${cname}</div>
-        <div class="flex-between"><span>Fase:</span><span style="color:${phaseColor};font-weight:600">${phase} (${c.months} meses)</span></div>
-        ${c.months > 6 ? `<div class="flex-between mt-2"><span>Último lucro:</span><span class="mono ${(c.lastProfit||0)>=0?'sc-green':'sc-red'}">${fmtFull(c.lastProfit||0)}</span>${(c.consecutiveLosses||0) >= 2 ? `<span class="badge badge-red">${c.consecutiveLosses} perdas seguidas</span>` : ''}</div>` : `<div class="mt-2" style="font-size:.82rem;color:var(--yellow)">Custo de maturação: ${fmtFull(5000)}/mês por mais ${6-c.months} meses</div>`}
+      const canIpo = c.months > 18 && (c.consecutiveLosses||0) === 0 && (c.ownership||100) >= 51 && !c.public;
+      const healthPct = Math.min(100, Math.max(0, 50 + (c.lastProfit||0)/200 + (c.cashReserve||0)/1000 - (c.consecutiveLosses||0)*10));
+      const healthColor = healthPct >= 60 ? 'var(--green)' : healthPct >= 30 ? 'var(--yellow)' : 'var(--red)';
+      const valuation = c.months > 6 ? calcValuation(c) : 0;
+      return `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-building"></i> ${cname}${c.public?` <span class="badge badge-green">${c.ticker}</span>`:''} ${(c.ownership||100)<100?`<span class="badge badge-yellow">${c.ownership}%</span>`:''}</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;font-size:.78rem">
+          <span>Fase: <strong style="color:${phaseColor}">${phase}</strong> (${c.months} meses)</span>
+          <span>Func.: <strong>${c.employees||1}</strong></span>
+          <span>Caixa: <strong class="mono" style="color:${(c.cashReserve||0)>=0?'var(--green)':'var(--red)'}">${fmtFull(c.cashReserve||0)}</strong></span>
+          <span>Participação: <strong>${c.ownership||100}%</strong></span>
+          ${c.months > 6 ? `<span style="color:var(--accent);font-weight:600">Valor de Mercado: ${fmtFull(valuation)}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div style="height:100%;width:${healthPct}%;background:${healthColor};border-radius:3px"></div></div>
+          <span style="font-size:.7rem;color:${healthColor};font-weight:600">Saúde ${healthPct.toFixed(0)}%</span>
+        </div>
+        ${c.months > 6 ? `<div class="flex-between"><span>Receita:</span><span class="mono sc-green">${fmtFull(c.revenue||0)}</span><span style="color:var(--muted)">/</span><span>Despesas:</span><span class="mono sc-red">${fmtFull(c.expenses||0)}</span><span>Lucro:</span><span class="mono ${(c.lastProfit||0)>=0?'sc-green':'sc-red'}">${fmtFull(c.lastProfit||0)}</span>${(c.consecutiveLosses||0) >= 2 ? `<span class="badge badge-red">${c.consecutiveLosses}×</span>` : ''}</div>` : `<div class="mt-2" style="font-size:.82rem;color:var(--yellow)">Custo de maturação: ${fmtFull(5000)}/mês por mais ${6-c.months} meses</div>`}
         <div class="mt-3 flex-between">
           ${c.months > 6 ? `<button class="btn btn-sm btn-ghost" onclick="sellCompany(${idx})"><i class="fa-solid fa-hand-holding-usd"></i> Vender</button>` : ''}
+          ${c.months > 6 && (c.ownership||100) > 50 ? `<button class="btn btn-sm btn-ghost" onclick="sellPctCompany(${idx})"><i class="fa-solid fa-percent"></i> Vender %</button>` : ''}
+          ${canIpo ? `<button class="btn btn-sm btn-primary" onclick="ipoCompany(${idx})"><i class="fa-solid fa-chart-line"></i> IPO</button>` : ''}
+          ${(c.ownership||100) < 100 ? `<span class="badge badge-yellow">Sócio minoritário</span>` : ''}
           <button class="btn btn-red btn-sm" onclick="closeCompany(${idx})"><i class="fa-solid fa-xmark"></i> Fechar</button>
         </div></div>`;
     }).join('');
@@ -898,8 +918,13 @@ function renderInvestimentos() {
     case 'rendafixa': content = renderRendaFixa(); break;
     case 'tesouro': content = renderTesouro(); break;
     case 'fiis': content = renderVar(FIIS, 'fiis', true); break;
-    case 'acoes': content = renderVar(STOCKS, 'stocks', false); break;
+    case 'acoes': {
+      const ipoAssets = G.ipoStocks.filter(s => { const c = G.companies[s.companyIdx]; return c && c.public; }).map(s => ({ ticker:s.ticker, name:s.name, vol:s.vol||0.08, basePrice:s.basePrice }));
+      content = renderVar([...STOCKS, ...ipoAssets], 'stocks', false);
+      break;
+    }
     case 'cripto': content = renderVar(CRYPTOS, 'crypto', false); break;
+    case 'daytrade': content = renderDayTrade(); break;
   }
   document.getElementById('panel-investimentos').innerHTML = `<div class="sub-tabs">${subHTML}</div>${content}`;
 }
@@ -1006,6 +1031,295 @@ function renderVar(assets, key, showDY) {
     <div class="table-wrap"><table><thead><tr><th>Ativo</th><th>Cotação</th><th>Var.</th>${showDY?'<th>DY Mensal</th>':''}<th>Trend</th><th>Ação</th></tr></thead><tbody>${availHTML}</tbody></table></div></div>
     ${activeEntries.length ? `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-briefcase"></i> Suas Posições</div>
     <div class="table-wrap"><table><thead><tr><th>Ativo</th><th>Quantidade</th><th>Preço Médio</th><th>Cotação</th><th>Valor / Resultado</th>${dyHead}<th>Ação</th></tr></thead><tbody>${activeHTML}</tbody></table></div></div>` : ''}`;
+}
+
+// ----- DAY TRADE EM TEMPO REAL -----
+const DT_DAYS = 20;
+const DT_TICKS = 12;
+const DT_MS = 900;
+let dtRT = null;
+
+function getDTTickers() {
+  const list = [...FIIS, ...STOCKS, ...CRYPTOS];
+  G.ipoStocks.filter(s => { const c = G.companies[s.companyIdx]; return c && c.public; }).forEach(s => {
+    if(!list.find(a => a.ticker === s.ticker)) list.push({ ticker:s.ticker, name:s.name, vol:s.vol||0.08, basePrice:s.basePrice });
+  });
+  return list;
+}
+
+function initDTCandles() {
+  if(!G.dailyCandles || G.dailyCandles._month !== G.month) {
+    G.dailyCandles = { _month:G.month, _day:0, _tick:0 };
+    getDTTickers().forEach(a => {
+      const p = G.prices[a.ticker] || a.basePrice || 50;
+      G.dailyCandles[a.ticker] = [{ open:p, high:p, low:p, close:p, formed:false }];
+    });
+  }
+}
+
+function tickDT() {
+  if(!dtRT || G.dailyCandles._month !== G.month) { stopDTRealtime(); return; }
+  G.dailyCandles._tick++;
+  const day = G.dailyCandles._day;
+  const formed = G.dailyCandles._tick >= DT_TICKS;
+  getDTTickers().forEach(a => {
+    const candles = G.dailyCandles[a.ticker];
+    if(!candles) return;
+    let cur = candles[day];
+    if(!cur) return;
+    const change = (Math.random() - 0.47) * 0.025;
+    const newClose = Math.max(cur.open * 0.3, Math.round(cur.close * (1 + change) * 100) / 100);
+    cur.high = Math.max(cur.high, newClose);
+    cur.low = Math.min(cur.low, newClose);
+    cur.close = newClose;
+    G.prices[a.ticker] = newClose;
+    if(formed) cur.formed = true;
+  });
+  if(formed) {
+    G.dailyCandles._tick = 0;
+    const nextDay = day + 1;
+    if(nextDay >= DT_DAYS) { stopDTRealtime(); render(); return; }
+    G.dailyCandles._day = nextDay;
+    getDTTickers().forEach(a => {
+      const candles = G.dailyCandles[a.ticker];
+      const prev = candles[day];
+      const open = prev.close;
+      const swing = (Math.random() - 0.45) * 0.03;
+      const close = Math.max(open * 0.3, Math.round(open * (1 + swing) * 100) / 100);
+      candles[nextDay] = { open, high:Math.max(open, close), low:Math.min(open, close), close, formed:false };
+    });
+  }
+  renderDTPanel();
+}
+
+function startDTRealtime() {
+  if(dtRT) return;
+  if(G.dailyCandles?._day >= DT_DAYS - 1) return;
+  initDTCandles();
+  dtRT = { intervalId:setInterval(tickDT, DT_MS) };
+}
+
+function stopDTRealtime() {
+  if(dtRT) { clearInterval(dtRT.intervalId); dtRT = null; }
+}
+
+function currentDTPrice(ticker) {
+  const c = G.dailyCandles?.[ticker];
+  if(c && c.length > 0) return c[c.length - 1].close;
+  return G.prices[ticker] || 50;
+}
+
+function renderCandleSVG(ticker, candles) {
+  const W = 200, H = 80, pad = 4;
+  const data = candles || G.dailyCandles?.[ticker];
+  if(!data || data.length === 0) return '';
+  const hi = Math.max(...data.map(c => c.high));
+  const lo = Math.min(...data.map(c => c.low));
+  const range = hi - lo || 1;
+  const candleW = Math.max(3, (W - pad * 2) / DT_DAYS - 1);
+  const yPos = p => pad + H - pad * 2 - ((p - lo) / range) * (H - pad * 2);
+  let svg = `<svg width="${W}" height="${H}" style="display:block;margin:0 auto"><rect x="0" y="0" width="${W}" height="${H}" fill="none"/>`;
+  data.forEach((c, i) => {
+    const x = pad + i * (candleW + 1);
+    const col = c.close >= c.open ? '#16a34a' : '#dc2626';
+    const bodyY = yPos(Math.max(c.open, c.close));
+    const bodyH = Math.max(1, Math.abs(yPos(c.open) - yPos(c.close)));
+    svg += `<line x1="${x+candleW/2}" y1="${yPos(c.high)}" x2="${x+candleW/2}" y2="${yPos(c.low)}" stroke="${col}" stroke-width="1"/>`;
+    svg += `<rect x="${x}" y="${bodyY}" width="${candleW}" height="${bodyH}" fill="${col}" rx="1" opacity="${c.formed === false ? '0.6' : '1'}"/>`;
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function renderDTPanel() {
+  const container = document.getElementById('dt-panel');
+  if(!container || activeInvTab !== 'daytrade') return;
+  const day = G.dailyCandles?._day ?? 0;
+  const tick = G.dailyCandles?._tick ?? 0;
+  const tickPct = Math.min(100, Math.round(tick / DT_TICKS * 100));
+  const allAssets = getDTTickers();
+  const saved = {};
+  document.querySelectorAll('#dt-panel [id^="dt_qty_"], #dt-panel [id^="dt_val_"]').forEach(el => saved[el.id] = el.value);
+  const focusedId = document.activeElement?.id;
+  let html = `<div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+    <span><i class="fa-solid fa-chart-line"></i> Day Trade ${dtRT ? '<span class="badge badge-green">AO VIVO</span>' : '<span class="badge badge-yellow">FECHADO</span>'}</span>
+    <span style="font-size:.78rem;color:var(--muted)">Dia ${day+1}/${DT_DAYS} <span style="color:var(--accent)">${tickPct}%</span></span>
+  </div>
+  <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">Compre e venda a qualquer momento no preço ao vivo. Alíquota de <strong style="color:var(--red)">15%</strong> sobre o lucro líquido por ativo. Posições liquidadas ao final do mês.</p>
+  ${!dtRT && day >= DT_DAYS-1 ? '<div style="text-align:center;padding:20px;color:var(--yellow)"><i class="fa-solid fa-hourglass-end"></i> Mercado fechado para este mês. Avance o mês para começar um novo ciclo.</div>' : ''}`;
+  allAssets.forEach(a => {
+    const candles = G.dailyCandles?.[a.ticker];
+    if(!candles || !candles[day]) return;
+    const cur = candles[day];
+    const prev = candles[day-1] || cur;
+    const changePct = prev.close > 0 ? ((cur.close - prev.close) / prev.close * 100) : 0;
+    const changeColor = changePct >= 0 ? 'var(--green)' : 'var(--red)';
+    const pos = G.dayTrades[a.ticker] || { shares:0, avgPrice:0 };
+    const isShort = pos.shares < 0;
+    const pnl = isShort ? (pos.avgPrice - cur.close) * Math.abs(pos.shares) : pos.shares > 0 ? (cur.close - pos.avgPrice) * pos.shares : 0;
+    const pnlPct = pos.shares !== 0 && pos.avgPrice > 0 ? (isShort ? ((pos.avgPrice - cur.close) / pos.avgPrice * 100) : ((cur.close - pos.avgPrice) / pos.avgPrice * 100)) : 0;
+    const posLabel = isShort ? 'Short' : pos.shares > 0 ? 'Long' : '─';
+    html += `<div class="card section-gap" style="padding:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div><span style="font-weight:600">${a.ticker}</span> <span style="color:var(--muted);font-size:.78rem">${a.name}</span>${pos.shares !== 0 ? ` <span class="badge ${isShort ? 'badge-red' : 'badge-green'}">${posLabel}</span>` : ''}</div>
+        <div style="display:flex;gap:12px;font-size:.82rem">
+          <span>Preço: <strong class="mono">R$ ${cur.close.toFixed(2)}</strong></span>
+          <span style="color:${changeColor}">${changePct >= 0 ? '▲' : '▼'} ${Math.abs(changePct).toFixed(2)}%</span>
+          <span style="font-size:.7rem;color:var(--muted)">Dia ${day+1}</span>
+        </div>
+      </div>
+      <div class="flex-between mt-2" style="font-size:.75rem;color:var(--muted)">
+        <span>Abertura: R$ ${cur.open.toFixed(2)}</span>
+        <span>Máxima: R$ ${cur.high.toFixed(2)}</span>
+        <span>Mínima: R$ ${cur.low.toFixed(2)}</span>
+      </div>
+      <div class="mt-2">${renderCandleSVG(a.ticker, candles)}</div>
+      ${pos.shares !== 0 ? `<div class="flex-between mt-2" style="font-size:.82rem">
+        <span>Posição: <strong>${pos.shares.toFixed(4)}</strong> @ R$ ${pos.avgPrice.toFixed(2)}</span>
+        <span style="color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">P&L: R$ ${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)</span>
+      </div>` : ''}
+      <div class="mt-2" style="display:flex;gap:6px;flex-wrap:wrap">
+        <input class="inp inp-sm" type="number" id="dt_qty_${a.ticker}" placeholder="Qtd" min="0" step="1" style="width:80px">
+        <input class="inp inp-sm" type="number" id="dt_val_${a.ticker}" placeholder="R$" min="0" step="10" style="width:80px">
+        <button class="btn btn-green btn-sm" ${dtRT ? `onclick="dtBuy('${a.ticker}')"` : 'disabled'}><i class="fa-solid fa-arrow-up"></i> Comprar</button>
+        <button class="btn btn-red btn-sm" ${dtRT ? `onclick="dtSell('${a.ticker}')"` : 'disabled'}><i class="fa-solid fa-arrow-down"></i> Vender</button>
+        ${pos.shares !== 0 ? `<button class="btn btn-ghost btn-sm" onclick="dtClose('${a.ticker}')"><i class="fa-solid fa-ban"></i> Zerar</button>` : ''}
+        ${pos.shares !== 0 && dtRT ? `<button class="btn btn-ghost btn-sm" onclick="dtInvert('${a.ticker}')"><i class="fa-solid fa-arrows-rotate"></i> Inverter</button>` : ''}
+      </div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:4px">Use quantidade OU valor em R$</div>
+    </div>`;
+  });
+  container.innerHTML = html;
+  Object.keys(saved).forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = saved[id];
+  });
+  if(focusedId && focusedId.startsWith('dt_')) {
+    const el = document.getElementById(focusedId);
+    if(el) el.focus();
+  }
+}
+
+function renderDayTrade() {
+  startDTRealtime();
+  return '<div class="card" id="dt-panel"></div>';
+}
+
+function dtGetQty(ticker) {
+  const qEl = document.getElementById('dt_qty_' + ticker);
+  const vEl = document.getElementById('dt_val_' + ticker);
+  const qty = parseFloat(qEl?.value);
+  const val = parseFloat(vEl?.value);
+  if(qty && qty > 0) return { type:'qty', value:qty };
+  if(val && val > 0) return { type:'val', value:val };
+  return null;
+}
+
+function dtBuy(ticker) {
+  const input = dtGetQty(ticker);
+  if(!input) return toast('Informe quantidade ou valor.', 'red');
+  const price = currentDTPrice(ticker);
+  const pos = G.dayTrades[ticker] || { shares:0, avgPrice:0 };
+  let qty;
+  if(input.type === 'val') {
+    qty = input.value / price;
+    if(qty <= 0) return;
+    if(qty * price > G.balance) return toast('Saldo insuficiente.', 'red');
+  } else {
+    qty = input.value;
+    if(qty <= 0) return;
+    if(qty * price > G.balance) return toast('Saldo insuficiente.', 'red');
+  }
+  const cost = qty * price;
+  if(pos.shares >= 0) {
+    const oldVal = pos.shares * pos.avgPrice;
+    pos.shares += qty;
+    pos.avgPrice = (oldVal + cost) / pos.shares;
+    G.balance -= cost;
+  } else {
+    const absShort = Math.abs(pos.shares);
+    if(qty <= absShort) {
+      pos.shares += qty;
+    } else {
+      const remain = qty - absShort;
+      pos.shares = remain;
+      pos.avgPrice = price;
+    }
+    G.balance -= cost;
+  }
+  if(Math.abs(pos.shares) < 0.0001) delete G.dayTrades[ticker];
+  else G.dayTrades[ticker] = pos;
+  toast(`Compra ${qty.toFixed(4)} ${ticker} a R$ ${price.toFixed(2)}`, 'green');
+  saveGame(); render();
+}
+
+function dtSell(ticker) {
+  const input = dtGetQty(ticker);
+  if(!input) return toast('Informe quantidade ou valor.', 'red');
+  const price = currentDTPrice(ticker);
+  const pos = G.dayTrades[ticker] || { shares:0, avgPrice:0 };
+  let qty;
+  if(input.type === 'val') {
+    qty = input.value / price;
+    if(qty <= 0) return;
+  } else {
+    qty = input.value;
+  }
+  const revenue = qty * price;
+  if(pos.shares <= 0) {
+    const oldShort = Math.abs(pos.shares);
+    pos.shares -= qty;
+    pos.avgPrice = (oldShort * pos.avgPrice + qty * price) / (oldShort + qty);
+    G.balance += revenue;
+  } else {
+    if(qty <= pos.shares) {
+      pos.shares -= qty;
+      G.balance += revenue;
+    } else {
+      const sellLong = pos.shares;
+      const remain = qty - sellLong;
+      G.balance += sellLong * price;
+      pos.shares = -remain;
+      pos.avgPrice = price;
+      G.balance += remain * price;
+    }
+  }
+  if(Math.abs(pos.shares) < 0.0001) delete G.dayTrades[ticker];
+  else G.dayTrades[ticker] = pos;
+  toast(`Venda ${qty.toFixed(4)} ${ticker} a R$ ${price.toFixed(2)}`, 'red');
+  saveGame(); render();
+}
+
+function dtClose(ticker) {
+  const pos = G.dayTrades[ticker];
+  if(!pos || pos.shares === 0) return;
+  const price = currentDTPrice(ticker);
+  const pnl = pos.shares > 0 ? (price - pos.avgPrice) * pos.shares : (pos.avgPrice - price) * Math.abs(pos.shares);
+  G.balance += pos.shares * price;
+  delete G.dayTrades[ticker];
+  toast(`Zerou ${ticker} — P&L: R$ ${pnl.toFixed(2)}`, pnl >= 0 ? 'green' : 'red');
+  saveGame(); render();
+}
+
+function dtInvert(ticker) {
+  const pos = G.dayTrades[ticker];
+  if(!pos || pos.shares === 0) return;
+  const price = currentDTPrice(ticker);
+  const oldShares = pos.shares;
+  const pnl = oldShares > 0 ? (price - pos.avgPrice) * oldShares : (pos.avgPrice - price) * Math.abs(oldShares);
+  G.balance += oldShares * price;
+  const newQty = Math.abs(oldShares);
+  if(oldShares > 0) {
+    pos.shares = -newQty;
+    pos.avgPrice = price;
+    G.balance += newQty * price;
+  } else {
+    pos.shares = newQty;
+    pos.avgPrice = price;
+    G.balance -= newQty * price;
+  }
+  toast(`Inverteu ${ticker}: ${oldShares > 0 ? 'Long→Short' : 'Short→Long'} a R$ ${price.toFixed(2)} (P&L anterior: R$ ${pnl.toFixed(2)})`, 'blue');
+  saveGame(); render();
 }
 
 // ----- BENS -----
@@ -1142,7 +1456,7 @@ function openCompany() {
   const name = prompt('Nome da empresa:', 'Minha Empresa ' + (G.companies.length + 1));
   if(!name || !name.trim()) return;
   G.balance -= 100000;
-  G.companies.push({ name:name.trim(), months:1, lastProfit:0, consecutiveLosses:0 });
+  G.companies.push({ name:name.trim(), months:1, lastProfit:0, consecutiveLosses:0, revenue:0, expenses:0, cashReserve:0, employees:1, ownership:100, public:false, ticker:null });
   toast(`Empresa "${name.trim()}" aberta! Fase de maturação: 6 meses com custos de `+fmtFull(5000)+'/mês', 'blue');
   saveGame(); render();
 }
@@ -1150,20 +1464,78 @@ function openCompany() {
 function closeCompany(idx) {
   if(idx === undefined && G.companies.length === 1) idx = 0;
   if(idx === undefined || !G.companies[idx]) return;
-  const name = G.companies[idx].name || 'Empresa';
+  const c = G.companies[idx];
+  const name = c.name || 'Empresa';
+  if(c.public && c.ticker) {
+    delete G.prices[c.ticker];
+    G.ipoStocks = G.ipoStocks.filter(s => s.ticker !== c.ticker);
+    delete G.inv.stocks[c.ticker];
+  }
   G.companies.splice(idx, 1);
   toast(`${name} fechada.`, 'yellow');
   saveGame(); render();
+}
+
+function calcValuation(c, multiplier) {
+  multiplier = multiplier || 5;
+  if(!c || c.months <= 6) return 0;
+  const annualProfit = Math.abs(c.lastProfit||0) * 12;
+  return Math.max(50000, Math.round(annualProfit * multiplier + (c.cashReserve||0)));
 }
 
 function sellCompany(idx) {
   const c = G.companies[idx];
   if(!c) return;
   if(c.months <= 6) return toast((c.name||'Empresa')+' ainda em maturação não pode ser vendida.', 'red');
-  const value = Math.round(50000 + Math.min(c.months, 120) * 2000 + Math.max(0, (c.lastProfit||0)) * 6);
+  if(c.public) return toast('Empresa de capital aberto deve ser vendida via ações.', 'red');
+  const value = calcValuation(c);
   G.balance += value;
   toast(`${c.name||'Empresa'} vendida por ${fmtFull(value)}!`, 'green');
   G.companies.splice(idx, 1);
+  saveGame(); render();
+}
+
+function sellPctCompany(idx) {
+  const c = G.companies[idx];
+  if(!c || c.months <= 6) return toast('Empresa ainda em maturação.', 'red');
+  if((c.ownership||100) <= 50) return toast('Você já é sócio minoritário.', 'red');
+  const pct = parseFloat(prompt('Quantos % deseja vender? (10, 25, 49)', '25'));
+  if(!pct || pct <= 0 || pct >= (c.ownership||100)) return toast('Percentual inválido.', 'red');
+  const totalVal = calcValuation(c);
+  const sellValue = Math.round(totalVal * pct / 100);
+  G.balance += sellValue;
+  c.ownership = Math.round((c.ownership||100) - pct);
+  toast(`${pct}% de ${c.name||'Empresa'} vendido por ${fmtFull(sellValue)}!`, 'green');
+  if(c.ownership < 50) toast('Atenção: você agora é sócio minoritário!', 'yellow');
+  saveGame(); render();
+}
+
+function ipoCompany(idx) {
+  const c = G.companies[idx];
+  if(!c || c.months <= 18) return toast('Empresa precisa de mais tempo de operação.', 'red');
+  if(c.public) return toast('Empresa já é de capital aberto.', 'yellow');
+  if((c.consecutiveLosses||0) > 0) return toast('Empresa precisa estar com lucro para abrir capital.', 'red');
+  if((c.ownership||100) < 51) return toast('Você precisa ter mais de 50% para abrir capital.', 'red');
+  const nameClean = c.name.replace(/[^a-zA-Z0-9]/g,'').substring(0,5).toUpperCase();
+  const ticker = nameClean + (G.ipoStocks.filter(s=>s.ticker.startsWith(nameClean)).length + 1) + '3';
+  const valuation = Math.max(100000, Math.round(calcValuation(c) * 1.5));
+  const totalShares = Math.max(1000, Math.round(valuation / (15 + Math.random() * 25)));
+  const offerPct = 0.35;
+  const offerShares = Math.round(totalShares * offerPct);
+  const ipoPrice = Math.round(valuation * offerPct / offerShares);
+  c.public = true;
+  c.ticker = ticker;
+  c.ownership = Math.round((c.ownership||100) * (1 - offerPct));
+  G.prices[ticker] = ipoPrice;
+  G.history[ticker] = [ipoPrice];
+  G.ipoStocks.push({ ticker, name:c.name+' ON', companyIdx:idx, basePrice:ipoPrice, vol:0.08, totalShares, offerShares });
+  if(!G.inv.stocks[ticker]) G.inv.stocks[ticker] = { shares:0, avgPrice:0 };
+  const playerShares = totalShares - offerShares;
+  G.inv.stocks[ticker].shares = playerShares;
+  G.inv.stocks[ticker].avgPrice = ipoPrice;
+  const raisedCash = Math.round(offerShares * ipoPrice * 0.95);
+  G.balance += raisedCash;
+  toast(`${c.name||'Empresa'} abriu capital! Ticker ${ticker} a ${fmtFull(ipoPrice)}. Captou ${fmtFull(raisedCash)}.`, 'green');
   saveGame(); render();
 }
 
@@ -1363,6 +1735,18 @@ function updatePrices() {
     G.history[a.ticker].push(G.prices[a.ticker]);
     if(G.history[a.ticker].length > 24) G.history[a.ticker].shift();
   });
+  G.ipoStocks.forEach(s => {
+    const c = G.companies[s.companyIdx];
+    if(!c) return;
+    const old = G.prices[s.ticker] || s.basePrice;
+    const perfBias = Math.max(-0.1, Math.min(0.1, (c.lastProfit||0) / 50000 * 0.5));
+    const change = (Math.random()-0.5 + perfBias) * (s.vol||0.08);
+    const newPrice = Math.max(old * 0.2, old * (1 + change));
+    G.prices[s.ticker] = Math.round(newPrice * 100) / 100;
+    if(!G.history[s.ticker]) G.history[s.ticker] = [];
+    G.history[s.ticker].push(G.prices[s.ticker]);
+    if(G.history[s.ticker].length > 24) G.history[s.ticker].shift();
+  });
 }
 
 function advanceMonth() {
@@ -1374,31 +1758,65 @@ function advanceMonth() {
 
   if(G.job && G.job.salary > 0) { G.balance += G.job.salary; S.income.salary = G.job.salary; }
 
+  let dtProfit = 0, dtTax = 0;
+  Object.keys(G.dayTrades||{}).forEach(ticker => {
+    const pos = G.dayTrades[ticker];
+    if(!pos || pos.shares === 0) return;
+    const price = G.prices[ticker] || 0;
+    const revenue = pos.shares * price;
+    const cost = pos.shares * pos.avgPrice;
+    const pnl = revenue - cost;
+    if(pnl > 0) {
+      const tax = pnl * 0.15;
+      G.balance += revenue - tax;
+      dtProfit += pnl;
+      dtTax += tax;
+      S.events.push(`<i class="fa-solid fa-coins" style="color:var(--green)"></i> Day trade ${ticker}: lucro R$ ${pnl.toFixed(2)} (IR: R$ ${tax.toFixed(2)})`);
+    } else {
+      G.balance += revenue;
+      dtProfit += pnl;
+      S.events.push(`<i class="fa-solid fa-coins" style="color:var(--red)"></i> Day trade ${ticker}: prejuízo R$ ${Math.abs(pnl).toFixed(2)}`);
+    }
+  });
+  G.dayTrades = {};
+  delete G.dailyCandles;
+  if(dtProfit > 0) { S.income.dayTrade = dtProfit; S.expenses.dayTradeTax = dtTax; }
+  else if(dtProfit < 0) S.expenses.dayTradeLoss = -dtProfit;
+
   let compCost = 0, compProfit = 0, compLoss = 0;
   for(let ci = G.companies.length - 1; ci >= 0; ci--) {
     const c = G.companies[ci];
     if(c.months <= 6) {
       G.balance -= 5000; compCost += 5000; c.months++;
+      c.employees = 1;
+      c.cashReserve = Math.max(0, (c.cashReserve||0) - 5000);
     } else {
-      const base = 3000 + Math.min(c.months, 120) * 80 * (1 + ci * 0.2);
-      const swing = (Math.random()-0.5) * 30000;
-      const profit = Math.round(base + swing);
+      c.employees = 1 + Math.floor(Math.min(c.months, 180) / 12);
+      const baseRev = 15000 + Math.min(c.months, 180) * 200 * (1 + ci * 0.15);
+      const payRoll = c.employees * 2500;
+      const opCost = 3000 + Math.random() * 5000;
+      const revSwing = (Math.random()-0.3) * 40000;
+      const revenue = Math.round(Math.max(0, baseRev + revSwing));
+      const expenses = Math.round(payRoll + opCost);
+      const profit = revenue - expenses;
+      c.revenue = revenue; c.expenses = expenses;
       G.balance += profit; c.lastProfit = profit;
       if(profit >= 0) { compProfit += profit; c.consecutiveLosses = 0; }
-      else {
-        compLoss += -profit;
-        c.consecutiveLosses = (c.consecutiveLosses||0) + 1;
-      }
+      else { compLoss += -profit; c.consecutiveLosses = (c.consecutiveLosses||0) + 1; }
+      c.cashReserve = Math.max(0, (c.cashReserve||0) + profit);
       c.months++;
       let bankrupt = false;
-      if(profit < -20000 && Math.random() < 0.5) bankrupt = true;
-      else if((c.consecutiveLosses||0) >= 3) bankrupt = Math.random() < Math.min(0.4, 0.05 + (c.consecutiveLosses||0) * 0.08);
-      else if(Math.random() < 0.015) bankrupt = true;
+      if(c.cashReserve <= 0 && profit < -60000 && Math.random() < 0.3) bankrupt = true;
+      else if((c.consecutiveLosses||0) >= 5) bankrupt = Math.random() < Math.min(0.3, 0.03 + (c.consecutiveLosses||0) * 0.05);
+      else if(Math.random() < 0.01) bankrupt = true;
       if(bankrupt) {
         S.events.push(`<i class="fa-solid fa-bomb"></i> ${c.name||'Empresa'} faliu! Prejuízo acumulado levou à falência.`);
-        const sellVal = Math.round(Math.max(0, 10000 + c.months * 500));
-        G.balance += sellVal;
-        S.events.push(`<i class="fa-solid fa-circle-dollar"></i> Recuperou ${fmtFull(sellVal)} da liquidação da ${c.name||'empresa'}.`);
+        if(c.public && c.ticker) {
+          S.events.push(`<i class="fa-solid fa-chart-line"></i> Ações ${c.ticker} canceladas — empresa fechou.`);
+          delete G.prices[c.ticker];
+          G.ipoStocks = G.ipoStocks.filter(s => s.ticker !== c.ticker);
+          delete G.inv.stocks[c.ticker];
+        }
         G.companies.splice(ci, 1);
       }
     }
@@ -1629,6 +2047,7 @@ function showMonthSummary(S) {
 
   const incItems = [];
   if(S.income.salary) incItems.push(['Salário', S.income.salary]);
+  if(S.income.dayTrade) incItems.push(['Day Trade', S.income.dayTrade]);
   if(S.income.companyProfit) incItems.push(['Lucro da Empresa', S.income.companyProfit]);
   if(S.income.rental) incItems.push(['Aluguéis Recebidos', S.income.rental]);
   if(S.income.noRent) incItems.push(['Economia de Aluguel', S.income.noRent]);
@@ -1645,6 +2064,8 @@ function showMonthSummary(S) {
   if(S.expenses.companyCost) expItems.push(['Custo Empresa (maturação)', S.expenses.companyCost]);
   if(S.expenses.companyLoss) expItems.push(['Prejuízo da Empresa', S.expenses.companyLoss]);
   if(S.expenses.loans) expItems.push(['Parcelas de Empréstimos', S.expenses.loans]);
+  if(S.expenses.dayTradeTax) expItems.push(['IR Day Trade', S.expenses.dayTradeTax]);
+  if(S.expenses.dayTradeLoss) expItems.push(['Prejuízo Day Trade', S.expenses.dayTradeLoss]);
   if(expItems.length) {
     html += '<div style="margin-bottom:12px"><div style="font-size:.78rem;color:var(--red);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Despesas</div>';
     expItems.forEach(([l,v]) => { html += `<div class="summary-row"><span class="sr-label">${l}</span><span class="mono" style="color:var(--red)">${fmtFull(v)}</span></div>`; });
@@ -1755,7 +2176,19 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSummary(
     G.children.forEach(c => { if(!c.name) c.name = 'Filho(a)'; if(c.independent === undefined) c.independent = false; });
     if(G.married === undefined) G.married = false;
     if(G.jobSearch === undefined) G.jobSearch = null;
-    if(G.companies) G.companies.forEach(c => { if(!c.name) c.name = 'Empresa'; if(c.consecutiveLosses === undefined) c.consecutiveLosses = 0; });
+    if(!G.ipoStocks) G.ipoStocks = [];
+    if(!G.dayTrades) G.dayTrades = {};
+    if(G.companies) G.companies.forEach(c => {
+      if(!c.name) c.name = 'Empresa';
+      if(c.consecutiveLosses === undefined) c.consecutiveLosses = 0;
+      if(c.ownership === undefined) c.ownership = 100;
+      if(c.revenue === undefined) c.revenue = 0;
+      if(c.expenses === undefined) c.expenses = 0;
+      if(c.cashReserve === undefined) c.cashReserve = 0;
+      if(c.employees === undefined) c.employees = 1;
+      if(c.public === undefined) c.public = false;
+      if(c.ticker === undefined) c.ticker = null;
+    });
     document.getElementById('welcome').classList.add('hidden');
     document.getElementById('game').style.display = 'block';
     render();
