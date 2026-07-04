@@ -217,6 +217,7 @@ tr:hover td{background:rgba(45,140,240,.03)}
     <div class="tab-panel" id="panel-carreira"></div>
     <div class="tab-panel" id="panel-investimentos"></div>
     <div class="tab-panel" id="panel-bens"></div>
+    <div class="tab-panel" id="panel-protecao"></div>
     <div class="tab-panel" id="panel-emprestimos"></div>
   </div>
 </div>
@@ -389,6 +390,7 @@ const TABS = [
   { id:'carreira', label:'Carreira & Negócios', icon:'fa-briefcase' },
   { id:'investimentos', label:'Investimentos', icon:'fa-chart-pie' },
   { id:'bens', label:'Bens', icon:'fa-house-car' },
+  { id:'protecao', label:'Proteção', icon:'fa-shield-heart' },
   { id:'emprestimos', label:'Empréstimos', icon:'fa-landmark' }
 ];
 
@@ -433,6 +435,10 @@ function newGame(name) {
     married:false,
     jobSearch:null,
     loans:[], events:[],
+    mortgages:[],
+    consorcios:[],
+    healthPlan:null,
+    insurances:{ life:null, home:null },
     livingInProp:null,
     peakNetWorth:5000,
     expenses:{ rent:1500, food:800, transport:400, insurance:200, utilities:300 },
@@ -705,6 +711,7 @@ function render() {
   renderCarreira();
   renderInvestimentos();
   renderBens();
+  renderProtecao();
   renderEmprestimos();
 
   TABS.forEach(t => { document.getElementById('panel-'+t.id).classList.toggle('active', activeTab===t.id); });
@@ -1322,6 +1329,375 @@ function dtInvert(ticker) {
   saveGame(); render();
 }
 
+// ----- PROTEÇÃO: PLANO DE SAÚDE, SEGUROS, FINANCIAMENTO, CONSÓRCIO -----
+const HEALTH_TIERS = [
+  { id:'basic', name:'Básico', coverage:0.6, baseCost:200, desc:'60% de cobertura' },
+  { id:'standard', name:'Padrão', coverage:0.8, baseCost:400, desc:'80% de cobertura' },
+  { id:'premium', name:'Premium', coverage:0.95, baseCost:800, desc:'95% de cobertura' }
+];
+const LIFE_INS = [
+  { id:'life100', name:'Seguro de Vida 100k', coverage:100000, cost:80 },
+  { id:'life300', name:'Seguro de Vida 300k', coverage:300000, cost:200 },
+  { id:'life500', name:'Seguro de Vida 500k', coverage:500000, cost:300 }
+];
+const HOME_INS_RATE = 0.003;
+
+function healthPlanCost(tierId) {
+  const t = HEALTH_TIERS.find(x => x.id === tierId);
+  if(!t) return 0;
+  const age = G.age || 30;
+  let mult = 1;
+  if(age <= 30) mult = 0.6;
+  else if(age <= 45) mult = 1.0;
+  else if(age <= 60) mult = 1.8;
+  else if(age <= 75) mult = 3.5;
+  else mult = 7.0;
+  return Math.round(t.baseCost * mult);
+}
+
+function renderProtecao() {
+  let html = '';
+  // Plano de Saúde
+  const hp = G.healthPlan;
+  const currentTier = hp ? HEALTH_TIERS.find(t => t.id === hp.tier) : null;
+  const hpCost = hp ? healthPlanCost(hp.tier) : 0;
+  html += `<div class="card"><div class="card-title"><i class="fa-solid fa-heart-pulse"></i> Plano de Saúde</div>`;
+  if(hp) {
+    html += `<div class="flex-between"><span>Plano: <strong>${currentTier?.name||hp.tier}</strong></span><span class="mono" style="color:var(--red)">${fmtFull(hpCost)}/mês</span></div>
+      <div class="flex-between mt-1"><span>Cobertura: ${currentTier?.desc||''}</span><span style="font-size:.82rem;color:var(--muted)">Desde mês ${hp.startMonth||G.month}</span></div>
+      <div class="mt-3" style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="changeHealthPlan()"><i class="fa-solid fa-arrow-right-arrow-left"></i> Trocar Plano</button>
+        <button class="btn btn-red btn-sm" onclick="cancelHealthPlan()"><i class="fa-solid fa-xmark"></i> Cancelar</button>
+      </div>`;
+  } else {
+    html += `<p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Você não possui plano de saúde. Eventos de saúde podem custar caro. Contrate um plano para reduzir custos.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    HEALTH_TIERS.forEach(t => {
+      const cost = healthPlanCost(t.id);
+      html += `<button class="btn btn-sm ${G.balance>=cost*3?'btn-primary':'btn-ghost'}" ${G.balance>=cost*3?`onclick="buyHealthPlan('${t.id}')"`:'disabled'}><strong>${t.name}</strong> ${fmtFull(cost)}/mês (${t.desc})</button>`;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  // Seguro de Vida
+  const life = G.insurances?.life;
+  html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-umbrella"></i> Seguro de Vida</div>`;
+  if(life) {
+    const li = LIFE_INS.find(x => x.id === life.planId);
+    html += `<div class="flex-between"><span>${li?.name||'Ativo'}</span><span class="mono" style="color:var(--red)">${fmtFull(life.monthlyCost)}/mês</span></div>
+      <div class="mt-2">Cobertura: <strong>${fmtFull(li?.coverage||0)}</strong> em caso de invalidez ou doenças graves</div>
+      <div class="mt-3"><button class="btn btn-red btn-sm" onclick="cancelLifeIns()"><i class="fa-solid fa-xmark"></i> Cancelar</button></div>`;
+  } else {
+    html += `<p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Proteção financeira para sua família em caso de imprevistos.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    LIFE_INS.forEach(li => {
+      const canAfford = G.balance >= li.cost * 3;
+      html += `<button class="btn btn-sm ${canAfford?'btn-primary':'btn-ghost'}" ${canAfford?`onclick="buyLifeIns('${li.id}')"`:'disabled'}><strong>${fmtFull(li.coverage)}</strong> ${fmtFull(li.cost)}/mês</button>`;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  // Seguro Residencial
+  const home = G.insurances?.home;
+  const hasProperties = G.properties.length > 0;
+  html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-house-chimney"></i> Seguro Residencial</div>`;
+  if(home) {
+    const homeVal = G.properties[home.propertyIdx]?.currentValue || 0;
+    html += `<div class="flex-between"><span>Imóvel segurado: <strong>${G.properties[home.propertyIdx]?.name||'—'}</strong></span><span class="mono" style="color:var(--red)">${fmtFull(home.monthlyCost)}/mês</span></div>
+      <div class="mt-2">Cobertura: até <strong>${fmtFull(Math.round(homeVal * 0.7))}</strong> contra danos</div>
+      <div class="mt-3"><button class="btn btn-red btn-sm" onclick="cancelHomeIns()"><i class="fa-solid fa-xmark"></i> Cancelar</button></div>`;
+  } else if(hasProperties) {
+    html += `<p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Proteja seu imóvel contra danos.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    G.properties.forEach((p, i) => {
+      if(G.livingInProp !== i || true) { // can insure any property
+        const cost = Math.round(p.currentValue * HOME_INS_RATE);
+        html += `<button class="btn btn-sm btn-primary" onclick="buyHomeIns(${i})">${p.name} — ${fmtFull(cost)}/mês</button>`;
+      }
+    });
+    html += `</div>`;
+  } else {
+    html += `<p style="font-size:.82rem;color:var(--muted)">Compre um imóvel para contratar seguro residencial.</p>`;
+  }
+  html += `</div>`;
+
+  // Financiamento de imóveis
+  const activeMorts = G.mortgages?.length || 0;
+  if(activeMorts > 0) {
+    html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-hand-holding-dollar"></i> Financiamentos Ativos</div>`;
+    G.mortgages.forEach((m, mi) => {
+      const mProp = G.properties[m.propertyIdx];
+      const pct = m.totalMonths > 0 ? Math.round((m.totalMonths - m.monthsRemaining) / m.totalMonths * 100) : 0;
+      html += `<div class="card section-gap" style="padding:12px">
+        <div class="flex-between"><span>${mProp?.name||'Imóvel'}</span><span class="mono" style="color:var(--accent)">${pct}% quitado</span></div>
+        <div class="flex-between mt-1" style="font-size:.82rem"><span>Valor: ${fmtFull(m.totalValue)}</span><span>Entrada: ${fmtFull(m.downPayment)}</span></div>
+        <div class="flex-between mt-1" style="font-size:.82rem"><span>Saldo devedor: <strong style="color:var(--red)">${fmtFull(m.remaining)}</strong></span><span>Parcela: <strong style="color:var(--red)">${fmtFull(m.monthlyPayment)}</strong></span></div>
+        <div class="flex-between mt-1" style="font-size:.78rem;color:var(--muted)"><span>Taxa: ${fmtN(m.rate)}% a.a.</span><span>${m.monthsRemaining} meses restantes</span></div>
+        <div class="flex-between mt-1" style="font-size:.78rem;color:var(--muted)"><div style="flex:1;height:4px;background:var(--bg);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:2px"></div></div></div>
+        ${G.balance >= m.remaining ? `<button class="btn btn-green btn-sm mt-2" onclick="payMortgage(${mi})"><i class="fa-solid fa-check"></i> Quitar (${fmtFull(m.remaining)})</button>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Consórcios
+  const activeCons = G.consorcios?.length || 0;
+  if(activeCons > 0) {
+    html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-users-between-lines"></i> Consórcios Ativos</div>`;
+    G.consorcios.forEach((cs, ci) => {
+      const pct = cs.totalMonths > 0 ? Math.round(cs.monthsPaid / cs.totalMonths * 100) : 0;
+      const progress = cs.totalMonths > 0 ? `(${cs.monthsPaid}/${cs.totalMonths} meses)` : '';
+      html += `<div class="card section-gap" style="padding:12px">
+        <div class="flex-between"><span>Consórcio <strong>${fmtFull(cs.totalValue)}</strong></span><span class="${cs.contemplado ? 'badge badge-green' : 'badge badge-yellow'}">${cs.contemplado ? 'Contemplado!' : 'Aguardando'}</span></div>
+        <div class="flex-between mt-1" style="font-size:.82rem"><span>Parcela: ${fmtFull(cs.monthlyFee)}</span><span>Taxa adm: ${fmtN(cs.adminFee)}%</span><span>${progress}</span></div>
+        <div class="flex-between mt-1" style="font-size:.78rem;color:var(--muted)"><div style="flex:1;height:4px;background:var(--bg);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:2px"></div></div></div>
+        <div class="mt-2" style="display:flex;gap:6px">
+          ${!cs.contemplado ? `<button class="btn btn-ghost btn-sm" onclick="consorcioBid(${ci})"><i class="fa-solid fa-gavel"></i> Dar Lance</button>` : `<button class="btn btn-primary btn-sm" onclick="consorcioUse(${ci})"><i class="fa-solid fa-house"></i> Usar Crédito</button>`}
+          <button class="btn btn-red btn-sm" onclick="cancelConsorcio(${ci})"><i class="fa-solid fa-xmark"></i> Cancelar</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Contratar consórcio
+  html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-users-between-lines"></i> Consórcio Imobiliário</div>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Alternativa ao financiamento. Você paga parcelas mensais e concorre a sorteios mensais para receber o crédito. Também pode dar lance para ser contemplado antes. Taxa de administração: <strong>15%</strong>.</p>`;
+  const consValues = [100000, 200000, 350000, 500000];
+  const consTerms = [100, 150, 200];
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">`;
+  consValues.forEach(v => {
+    consTerms.forEach(t => {
+      const adminFee = 15;
+      const totalWithFee = v * (1 + adminFee/100);
+      const monthly = Math.round(totalWithFee / t);
+      html += `<button class="btn btn-sm btn-ghost" onclick="startConsorcio(${v}, ${t})"><strong>${fmtFull(v)}</strong> — ${t}meses ${fmtFull(monthly)}/mês</button>`;
+    });
+  });
+  html += `</div></div>`;
+
+  // Contratar financiamento (at any time for owned properties that aren't financed)
+  const unfinancedProps = G.properties.filter((p, i) => !G.mortgages?.some(m => m.propertyIdx === i));
+  if(unfinancedProps.length > 0) {
+    html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-hand-holding-dollar"></i> Financiar Imóvel</div>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Contrate um financiamento sobre um imóvel já quitado para levantar capital (refinanciamento).</p>`;
+    unfinancedProps.forEach((p, i) => {
+      const propIdx = G.properties.indexOf(p);
+      html += `<button class="btn btn-sm btn-ghost" onclick="financeProperty(${propIdx})">${p.name} — até ${fmtFull(Math.round(p.currentValue * 0.7))}</button> `;
+    });
+    html += `</div>`;
+  }
+
+  document.getElementById('panel-protecao').innerHTML = html;
+}
+
+function buyHealthPlan(tierId) {
+  const cost = healthPlanCost(tierId) * 3;
+  if(G.balance < cost) return toast('Saldo insuficiente para a primeira mensalidade.', 'red');
+  G.balance -= cost;
+  G.healthPlan = { tier:tierId, startMonth:G.month };
+  toast(`Plano de Saúde contratado!`, 'green');
+  saveGame(); render();
+}
+function changeHealthPlan() {
+  if(!G.healthPlan) return;
+  const tiers = HEALTH_TIERS.map(t => `${t.id}: ${t.name} (${fmtFull(healthPlanCost(t.id))}/mês)`).join('\n');
+  const choice = prompt(`Escolha um plano:\n${tiers}`, G.healthPlan.tier);
+  if(!choice || !HEALTH_TIERS.find(t => t.id === choice)) return;
+  G.healthPlan.tier = choice;
+  toast(`Plano alterado para ${HEALTH_TIERS.find(t=>t.id===choice).name}.`, 'green');
+  saveGame(); render();
+}
+function cancelHealthPlan() {
+  if(!G.healthPlan) return;
+  G.healthPlan = null;
+  toast('Plano de saúde cancelado.', 'yellow');
+  saveGame(); render();
+}
+function buyLifeIns(planId) {
+  const li = LIFE_INS.find(x => x.id === planId);
+  if(!li) return;
+  if(G.balance < li.cost * 3) return toast('Saldo insuficiente.', 'red');
+  G.balance -= li.cost * 3;
+  G.insurances.life = { planId, monthlyCost:li.cost, coverage:li.coverage };
+  toast(`Seguro de Vida contratado!`, 'green');
+  saveGame(); render();
+}
+function cancelLifeIns() {
+  G.insurances.life = null;
+  toast('Seguro de vida cancelado.', 'yellow');
+  saveGame(); render();
+}
+function buyHomeIns(propIdx) {
+  const p = G.properties[propIdx];
+  if(!p) return;
+  const cost = Math.round(p.currentValue * HOME_INS_RATE);
+  if(G.balance < cost * 3) return toast('Saldo insuficiente.', 'red');
+  G.balance -= cost * 3;
+  G.insurances.home = { propertyIdx:propIdx, monthlyCost:cost };
+  toast(`Seguro residencial para ${p.name} contratado!`, 'green');
+  saveGame(); render();
+}
+function cancelHomeIns() {
+  G.insurances.home = null;
+  toast('Seguro residencial cancelado.', 'yellow');
+  saveGame(); render();
+}
+
+// Financiamento
+function financeProperty(propIdx) {
+  const p = G.properties[propIdx];
+  if(!p) return;
+  if(G.mortgages?.some(m => m.propertyIdx === propIdx)) return toast('Imóvel já possui financiamento.', 'red');
+  const maxLoan = Math.round(p.currentValue * 0.7);
+  const amount = parseFloat(prompt(`Valor desejado (máx ${fmtFull(maxLoan)}):`, String(maxLoan)));
+  if(!amount || amount <= 0 || amount > maxLoan) return toast('Valor inválido ou acima do limite.', 'red');
+  const rate = G.selic + 3 + Math.random() * 2;
+  const term = 120 + Math.floor(Math.random() * 120);
+  const monthlyRate = rate / 100 / 12;
+  const amort = amount / term;
+  const firstInterest = amount * monthlyRate;
+  const monthlyPayment = Math.round(amort + firstInterest);
+  G.balance += amount;
+  G.mortgages.push({ propertyIdx:propIdx, totalValue:amount, downPayment:0, remaining:amount, monthlyPayment, rate:Math.round(rate*10)/10, monthsRemaining:term, totalMonths:term });
+  toast(`Refinanciamento de ${p.name}: ${fmtFull(amount)} liberado! ${term} meses, ${fmtN(rate)}% a.a.`, 'green');
+  saveGame(); render();
+}
+
+function payMortgage(mi) {
+  const m = G.mortgages[mi];
+  if(!m) return;
+  if(G.balance < m.remaining) return toast('Saldo insuficiente para quitar.', 'red');
+  G.balance -= m.remaining;
+  G.mortgages.splice(mi, 1);
+  toast('Financiamento quitado!', 'green');
+  saveGame(); render();
+}
+
+// Consórcio
+function startConsorcio(totalValue, months) {
+  const adminFee = 15;
+  const totalWithFee = totalValue * (1 + adminFee/100);
+  const monthly = Math.round(totalWithFee / months);
+  if(G.balance < monthly) return toast('Saldo insuficiente para a primeira parcela.', 'red');
+  G.balance -= monthly;
+  G.consorcios.push({ totalValue, totalMonths:months, monthsPaid:1, monthlyFee:monthly, adminFee, contemplado:false });
+  toast(`Consórcio de ${fmtFull(totalValue)} iniciado! Parcela: ${fmtFull(monthly)}/mês`, 'blue');
+  saveGame(); render();
+}
+function consorcioBid(ci) {
+  const cs = G.consorcios[ci];
+  if(!cs || cs.contemplado) return;
+  const bidPct = parseFloat(prompt('Percentual do lance? (10-50%)', '30'));
+  if(!bidPct || bidPct < 10 || bidPct > 50) return;
+  const bidValue = Math.round(cs.totalValue * bidPct / 100);
+  if(G.balance < bidValue) return toast('Saldo insuficiente para o lance.', 'red');
+  G.balance -= bidValue;
+  cs.contemplado = true;
+  toast(`Lance de ${fmtFull(bidValue)} aceito! Consórcio contemplado!`, 'green');
+  saveGame(); render();
+}
+function consorcioUse(ci) {
+  const cs = G.consorcios[ci];
+  if(!cs || !cs.contemplado) return;
+  // Show available properties or option to buy
+  const credit = cs.totalValue;
+  G.balance += credit;
+  G.consorcios.splice(ci, 1);
+  toast(`Crédito de ${fmtFull(credit)} liberado! Use para comprar um imóvel.`, 'green');
+  saveGame(); render();
+}
+function cancelConsorcio(ci) {
+  const cs = G.consorcios[ci];
+  if(!cs || cs.contemplado) return;
+  const refund = Math.round(cs.monthsPaid * cs.monthlyFee * 0.5);
+  G.balance += refund;
+  G.consorcios.splice(ci, 1);
+  toast(`Consórcio cancelado. Restituição de ${fmtFull(refund)} (50% do pago).`, 'yellow');
+  saveGame(); render();
+}
+
+// Process insurance/health costs in advanceMonth
+function processProtection() {
+  const ev = [];
+  // Health plan monthly cost
+  if(G.healthPlan) {
+    const cost = healthPlanCost(G.healthPlan.tier);
+    G.balance -= cost;
+    ev.push({ text:`<i class="fa-solid fa-heart-pulse"></i> Plano de saúde: ${fmtFull(cost)}`, type:'expense' });
+  }
+  // Life insurance
+  if(G.insurances?.life) {
+    G.balance -= G.insurances.life.monthlyCost;
+    ev.push({ text:`<i class="fa-solid fa-umbrella"></i> Seguro de vida: ${fmtFull(G.insurances.life.monthlyCost)}`, type:'expense' });
+  }
+  // Home insurance
+  if(G.insurances?.home) {
+    const idx = G.insurances.home.propertyIdx;
+    if(G.properties[idx]) {
+      const cost = G.insurances.home.monthlyCost;
+      G.balance -= cost;
+      ev.push({ text:`<i class="fa-solid fa-house-chimney"></i> Seguro residencial (${G.properties[idx].name}): ${fmtFull(cost)}`, type:'expense' });
+    } else {
+      G.insurances.home = null; // property sold
+    }
+  }
+  // Consórcio monthly fee
+  if(G.consorcios) {
+    G.consorcios.forEach((cs, ci) => {
+      if(cs.contemplado) return;
+      if(G.balance < cs.monthlyFee) {
+        // Cancel the consórcio
+        const refund = Math.round(cs.monthsPaid * cs.monthlyFee * 0.5);
+        G.balance += refund;
+        ev.push({ text:`<i class="fa-solid fa-triangle-exclamation"></i> Consórcio ${fmtFull(cs.totalValue)} cancelado por inadimplência. Restituição: ${fmtFull(refund)}`, type:'expense' });
+        G.consorcios.splice(ci, 1);
+        return;
+      }
+      G.balance -= cs.monthlyFee;
+      cs.monthsPaid++;
+      // Random contemplation (0.5% per month per 10% of total paid)
+      const chance = Math.min(0.1, 0.005 + (cs.monthsPaid / cs.totalMonths) * 0.03);
+      if(Math.random() < chance) {
+        cs.contemplado = true;
+        ev.push({ text:`<i class="fa-solid fa-gift"></i> Consórcio de ${fmtFull(cs.totalValue)} foi contemplado por sorteio!`, type:'income' });
+      }
+      if(cs.monthsPaid >= cs.totalMonths && !cs.contemplado) {
+        cs.contemplado = true; // auto-contemplated at end
+        ev.push({ text:`<i class="fa-solid fa-gift"></i> Consórcio de ${fmtFull(cs.totalValue)} contemplado ao final do prazo!`, type:'income' });
+      }
+    });
+  }
+  // Mortgages monthly payment
+  if(G.mortgages) {
+    G.mortgages.forEach((m, mi) => {
+      if(G.balance < m.monthlyPayment) {
+        const lostProp = G.properties[m.propertyIdx];
+        ev.push({ text:`<i class="fa-solid fa-house-chimney-window"></i> Financiamento em atraso! ${lostProp?.name||'Imóvel'} perdido!`, type:'expense' });
+        if(lostProp) {
+          G.properties.splice(m.propertyIdx, 1);
+          G.livingInProp = null;
+        }
+        G.mortgages.splice(mi, 1);
+        return;
+      }
+      G.balance -= m.monthlyPayment;
+      const monthlyRate = m.rate / 100 / 12;
+      const interest = Math.round(m.remaining * monthlyRate);
+      const amort = m.monthlyPayment - interest;
+      m.remaining -= amort;
+      m.monthsRemaining--;
+      if(m.monthsRemaining <= 0 || m.remaining <= 0) {
+        G.mortgages.splice(mi, 1);
+        ev.push({ text:`<i class="fa-solid fa-check-circle"></i> Financiamento quitado!`, type:'income' });
+      }
+    });
+  }
+  return ev;
+}
+
 // ----- BENS -----
 function renderBens() {
   // Carros disponíveis — com ícones de marca
@@ -1356,7 +1732,8 @@ function renderBens() {
       <td class="mono">${fmtFull(p.price)}</td>
       <td class="mono" style="color:var(--green)">${fmtFull(p.rent)}/mês</td>
       <td class="mono" style="color:var(--muted)">${(p.app*100).toFixed(1)}%/mês</td>
-      <td><button class="btn btn-primary btn-sm" ${G.balance>=p.price?`onclick="buyProperty('${p.id}')"`:'disabled'}>Comprar</button></td>
+      <td><button class="btn btn-primary btn-sm" ${G.balance>=p.price?`onclick="buyProperty('${p.id}')"`:'disabled'}>À Vista</button>
+        <button class="btn btn-ghost btn-sm" onclick="buyPropertyFinanced('${p.id}')"><i class="fa-solid fa-percent"></i> Financiar</button></td>
     </tr>`;
   }).join('');
 
@@ -1665,9 +2042,33 @@ function buyProperty(id) {
   toast(`${p.name} comprado por ${fmtFull(p.price)}!`, 'green');
   saveGame(); render();
 }
+function buyPropertyFinanced(id) {
+  const p = PROPERTIES.find(x=>x.id===id);
+  if(!p) return;
+  const downPct = parseFloat(prompt('Percentual de entrada? (20-50%)', '20'));
+  if(!downPct || downPct < 20 || downPct > 50) return toast('Entrada deve ser entre 20% e 50%.', 'red');
+  const down = Math.round(p.price * downPct / 100);
+  if(G.balance < down) return toast('Saldo insuficiente para a entrada.', 'red');
+  const financeAmt = p.price - down;
+  const rate = G.selic + 2 + Math.random() * 3;
+  const term = 240 + Math.floor(Math.random() * 120);
+  const monthlyRate = rate / 100 / 12;
+  const amort = financeAmt / term;
+  const firstInterest = financeAmt * monthlyRate;
+  const monthlyPayment = Math.round(amort + firstInterest);
+  G.balance -= down;
+  G.properties.push({ name:p.name, purchasePrice:p.price, currentValue:p.price, rent:p.rent, app:p.app, isRented:false });
+  const propIdx = G.properties.length - 1;
+  G.mortgages.push({ propertyIdx:propIdx, totalValue:p.price, downPayment:down, remaining:financeAmt, monthlyPayment, rate:Math.round(rate*10)/10, monthsRemaining:term, totalMonths:term });
+  toast(`${p.name} financiado! Entrada: ${fmtFull(down)}, ${term}× ${fmtFull(monthlyPayment)}`, 'green');
+  saveGame(); render();
+}
 function sellProperty(idx) {
   const p = G.properties[idx];
   if(!p) return;
+  if(G.mortgages?.some(m => m.propertyIdx === idx)) return toast('Quite o financiamento antes de vender.', 'red');
+  if(G.livingInProp === idx) return toast('Saia do imóvel antes de vender.', 'red');
+  if(G.insurances?.home?.propertyIdx === idx) cancelHomeIns();
   G.balance += p.currentValue;
   if(G.livingInProp === idx) G.livingInProp = null;
   else if(G.livingInProp !== null && G.livingInProp > idx) G.livingInProp--;
@@ -1886,6 +2287,12 @@ function advanceMonth() {
   G.loans = G.loans.filter(l => l.monthsRemaining > 0 && l.remaining > 1);
   if(loanPay > 0) S.expenses.loans = loanPay;
 
+  const protEv = processProtection();
+  protEv.forEach(e => {
+    if(e.type === 'expense') S.events.push(`<i class="fa-solid fa-shield"></i> ${e.text}`);
+    else S.events.push(`<i class="fa-solid fa-shield"></i> ${e.text}`);
+  });
+
   updatePrices();
 
   if(Math.random() < 0.15) {
@@ -1894,9 +2301,29 @@ function advanceMonth() {
     else pool = pool.filter(e => !e.text.includes('Divórcio'));
     if(G.children.length === 0) pool = pool.filter(e => !e.text.includes('materiais escolares') && !e.text.includes('Aniversário de 15 anos'));
     const ev = pool[randInt(0, pool.length-1)];
-    const adj = Math.round(ev.cost * (1 + G.inflation/100));
+    let adj = Math.round(ev.cost * (1 + G.inflation/100));
+    let mitigated = false;
+    // Check if insurance reduces the cost
+    if((ev.text.includes('canos')||ev.text.includes('gás')||ev.text.includes('encanamento')||ev.text.includes('eletrodoméstico')||ev.text.includes('vazamento')) && G.insurances?.home) {
+      const reduced = Math.round(adj * 0.7);
+      adj -= reduced;
+      mitigated = true;
+      S.events.push(`<i class="fa-solid fa-triangle-exclamation"></i> ${ev.text} — Seguro residencial cobriu ${fmtFull(reduced)} ` + `<span style="color:var(--red)">-${fmtFull(adj)}</span>`);
+    } else if(ev.text.includes('saúde') || ev.text.includes('dentista')) {
+      if(G.healthPlan) {
+        const tier = HEALTH_TIERS.find(t => t.id === G.healthPlan.tier);
+        if(tier) {
+          const covered = Math.round(adj * tier.coverage);
+          adj -= covered;
+          mitigated = true;
+          S.events.push(`<i class="fa-solid fa-triangle-exclamation"></i> ${ev.text} — Plano cobriu ${fmtFull(covered)} ` + `<span style="color:var(--red)">-${fmtFull(adj)}</span>`);
+        }
+      }
+    }
     G.balance -= adj;
-    S.events.push(`<i class="fa-solid fa-triangle-exclamation"></i> ${ev.text} <span style="color:var(--red)">-${fmtFull(adj)}</span>`);
+    if(!mitigated) {
+      S.events.push(`<i class="fa-solid fa-triangle-exclamation"></i> ${ev.text} <span style="color:var(--red)">-${fmtFull(adj)}</span>`);
+    }
     G.events.push(`Mês ${monthLabel(G.month)}: ${ev.text} -${fmtFull(adj)}`);
     if(ev.text.includes('Nasceu seu filho')) {
       const cname = prompt('Nome do filho(a):', 'Filho(a) ' + (G.children.filter(c => !c.independent).length + 1));
@@ -1984,9 +2411,23 @@ function advanceMonth() {
 
   if(G.age >= 58 && Math.random() < 0.08) {
     const hev = HEALTH_EVENTS[randInt(0, HEALTH_EVENTS.length-1)];
-    const hadj = Math.round(hev.cost * (1 + G.inflation/100) * (1 + (G.age - 58) / 100));
+    let hadj = Math.round(hev.cost * (1 + G.inflation/100) * (1 + (G.age - 58) / 100));
+    if(G.healthPlan) {
+      const tier = HEALTH_TIERS.find(t => t.id === G.healthPlan.tier);
+      if(tier) {
+        const covered = Math.round(hadj * tier.coverage);
+        hadj -= covered;
+        S.events.push(`<i class="fa-solid fa-heart-pulse" style="color:var(--yellow)"></i> Problema de saúde! ${hev.text} — Plano cobriu ${fmtFull(covered)}, custo real: <span style="color:var(--red)">-${fmtFull(hadj)}</span>`);
+      }
+    } else {
+      S.events.push(`<i class="fa-solid fa-heart-pulse" style="color:var(--red)"></i> Problema de saúde! ${hev.text} <span style="color:var(--red)">-${fmtFull(hadj)}</span>`);
+    }
     G.balance -= hadj;
-    S.events.push(`<i class="fa-solid fa-heart-pulse" style="color:var(--red)"></i> Problema de saúde! ${hev.text} <span style="color:var(--red)">-${fmtFull(hadj)}</span>`);
+    if(G.insurances?.life && hev.cost >= 8000) {
+      const payout = Math.round(G.insurances.life.coverage * 0.2);
+      G.balance += payout;
+      S.events.push(`<i class="fa-solid fa-umbrella" style="color:var(--green)"></i> Seguro de vida pagou ${fmtFull(payout)} por invalidez.`);
+    }
     G.events.push(`Mês ${monthLabel(G.month)}: ${hev.text} -${fmtFull(hadj)}`);
   }
 
@@ -2178,6 +2619,12 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSummary(
     if(G.jobSearch === undefined) G.jobSearch = null;
     if(!G.ipoStocks) G.ipoStocks = [];
     if(!G.dayTrades) G.dayTrades = {};
+    if(!G.mortgages) G.mortgages = [];
+    if(!G.consorcios) G.consorcios = [];
+    if(G.healthPlan === undefined) G.healthPlan = null;
+    if(!G.insurances) G.insurances = { life:null, home:null };
+    if(G.insurances.life === undefined) G.insurances.life = null;
+    if(G.insurances.home === undefined) G.insurances.home = null;
     if(G.companies) G.companies.forEach(c => {
       if(!c.name) c.name = 'Empresa';
       if(c.consecutiveLosses === undefined) c.consecutiveLosses = 0;
