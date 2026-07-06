@@ -541,8 +541,14 @@ function calcNetWorth() {
 }
 
 function monthlyExpenses() {
-  let tot = G.expenses.food + G.expenses.transport + G.expenses.insurance + G.expenses.utilities;
-  if(!G.livingInProp) tot += G.expenses.rent;
+  const propMult = propertyExpenseMultiplier();
+  const hSize = householdSize();
+  const hFactor = hSize - 1;
+  let tot = G.livingInProp !== null ? 0 : G.expenses.rent;
+  tot += Math.round(G.expenses.food * propMult * (1 + hFactor * 0.50));
+  tot += Math.round(G.expenses.utilities * propMult * (1 + hFactor * 0.25));
+  tot += Math.round(G.expenses.transport * (1 + hFactor * 0.20));
+  tot += G.expenses.insurance;
   G.cars.forEach(c => tot += c.cost);
   return tot;
 }
@@ -789,8 +795,8 @@ function renderDashboard(nw) {
   const rentFree = G.livingInProp ? '<span class="badge badge-green">Sem aluguel</span>' : fmtFull(G.expenses.rent);
   const hSize = householdSize();
   const propMult = propertyExpenseMultiplier();
-  const adjFood = Math.round(G.expenses.food * propMult * (1 + (hSize - 1) * 0.35));
-  const adjUtils = Math.round(G.expenses.utilities * propMult * (1 + (hSize - 1) * 0.15));
+  const adjFood = Math.round(G.expenses.food * propMult * (1 + (hSize - 1) * 0.50));
+  const adjUtils = Math.round(G.expenses.utilities * propMult * (1 + (hSize - 1) * 0.25));
 
   let invTotal = G.inv.savings + G.inv.treasurySelic;
   G.inv.fixedIncome.forEach(i => invTotal += i.currentValue);
@@ -2395,10 +2401,6 @@ function advanceMonth() {
     }
     if(ev.text.includes('Divórcio')) {
       G.married = false;
-      const nw = calcNetWorth();
-      const penalty = Math.round(nw * 0.25);
-      G.balance = Math.max(0, G.balance - penalty);
-      S.events.push(`<i class="fa-solid fa-heart-broken" style="color:var(--red)"></i> Divórcio: perda de 25% do patrimônio! <span style="color:var(--red)">-${fmtFull(penalty)}</span>`);
       ['stocks','fiis','crypto'].forEach(cat => {
         for(const t in G.inv[cat]) {
           if(G.inv[cat][t].shares > 0) {
