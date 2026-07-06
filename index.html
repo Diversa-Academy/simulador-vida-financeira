@@ -105,6 +105,13 @@ tr:hover td{background:rgba(45,140,240,.03)}
 .modal{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;animation:fadeUp .25s ease}
 .modal h2{font-size:1.2rem;margin-bottom:16px;display:flex;align-items:center;gap:10px}
 .modal h2 i{color:var(--accent)}
+.modal-tutorial{max-width:640px}
+.tut-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.tut-section{display:flex;gap:10px;padding:10px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)}
+.tut-icon{width:32px;height:32px;border-radius:8px;background:rgba(45,140,240,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.85rem;color:var(--accent)}
+.tut-title{font-weight:600;font-size:.82rem;margin-bottom:3px;color:var(--text)}
+.tut-desc{font-size:.75rem;color:var(--muted);line-height:1.4}
+.tut-tip{background:rgba(255,179,71,.1);border:1px solid rgba(255,179,71,.2);border-radius:8px;padding:10px 14px;font-size:.8rem;color:var(--yellow);display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(30,46,80,.3);font-size:.88rem}
 .summary-row:last-child{border-bottom:none}
 .summary-row .sr-label{color:var(--muted)}
@@ -182,6 +189,60 @@ tr:hover td{background:rgba(45,140,240,.03)}
     <div id="summaryContent"></div>
     <div class="mt-4 text-center">
       <button class="btn btn-primary" onclick="closeSummary()">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="tutorialModal">
+  <div class="modal modal-tutorial">
+    <h2><i class="fa-solid fa-compass"></i> Tutorial — Simulador de Vida Financeira</h2>
+    <div class="tut-grid">
+      <div class="tut-section">
+        <div class="tut-icon"><i class="fa-solid fa-bullseye"></i></div>
+        <div>
+          <div class="tut-title">Objetivo</div>
+          <div class="tut-desc">Administre suas finanças dos 18 anos até o fim da vida. Construa patrimônio através de trabalho, investimentos e decisões inteligentes.</div>
+        </div>
+      </div>
+      <div class="tut-section">
+        <div class="tut-icon"><i class="fa-solid fa-briefcase"></i></div>
+        <div>
+          <div class="tut-title">Carreira & Negócios</div>
+          <div class="tut-desc">Trabalhe, candidate-se a vagas melhores, abra empresas e faça IPO. Cuidado com demissões e falência.</div>
+        </div>
+      </div>
+      <div class="tut-section">
+        <div class="tut-icon"><i class="fa-solid fa-chart-line"></i></div>
+        <div>
+          <div class="tut-title">Investimentos</div>
+          <div class="tut-desc">Invista em CDB, Tesouro, ações, FIIs e cripto. Preços mudam todo mês. Day trade em tempo real com gráfico de velas.</div>
+        </div>
+      </div>
+      <div class="tut-section">
+        <div class="tut-icon"><i class="fa-solid fa-house"></i></div>
+        <div>
+          <div class="tut-title">Bens</div>
+          <div class="tut-desc">Compre carros e imóveis à vista ou financiado. Alugue imóveis para renda passiva. Financiamento com amortização SAC.</div>
+        </div>
+      </div>
+      <div class="tut-section">
+        <div class="tut-icon"><i class="fa-solid fa-shield-heart"></i></div>
+        <div>
+          <div class="tut-title">Proteção</div>
+          <div class="tut-desc">Plano de saúde reduz custos médicos. Seguros de vida e residencial cobrem imprevistos. Consórcio com sorteios mensais.</div>
+        </div>
+      </div>
+      <div class="tut-section">
+        <div class="tut-icon"><i class="fa-solid fa-dice"></i></div>
+        <div>
+          <div class="tut-title">Eventos</div>
+          <div class="tut-desc">Casamento, divórcio, filhos, saúde, promoções, demissões. A economia (Selic, inflação) muda todo mês.</div>
+        </div>
+      </div>
+    </div>
+    <div class="tut-tip"><i class="fa-solid fa-lightbulb"></i> Dica: mantenha uma reserva de emergência e contrate um plano de saúde antes dos 40 anos!</div>
+    <div class="mt-4 text-center">
+      <button class="btn btn-primary btn-lg" onclick="hideTutorial()"><i class="fa-solid fa-play"></i> Entendi, vamos jogar!</button>
     </div>
   </div>
 </div>
@@ -2594,7 +2655,15 @@ function startGame() {
   document.getElementById('welcome').classList.add('hidden');
   document.getElementById('game').style.display = 'block';
   render();
-  toast(`Bem-vindo, ${name}! Seu saldo inicial é ${fmtFull(G.balance)}.`, 'blue');
+  showTutorial();
+}
+
+function showTutorial() {
+  document.getElementById('tutorialModal').classList.add('show');
+}
+
+function hideTutorial() {
+  document.getElementById('tutorialModal').classList.remove('show');
 }
 
 document.getElementById('nameInput').addEventListener('keydown', e => {
