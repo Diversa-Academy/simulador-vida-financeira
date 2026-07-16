@@ -112,6 +112,9 @@ tr:hover td{background:rgba(45,140,240,.03)}
 .tut-title{font-weight:600;font-size:.82rem;margin-bottom:3px;color:var(--text)}
 .tut-desc{font-size:.75rem;color:var(--muted);line-height:1.4}
 .tut-tip{background:rgba(255,179,71,.1);border:1px solid rgba(255,179,71,.2);border-radius:8px;padding:10px 14px;font-size:.8rem;color:var(--yellow);display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.help-tip{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:rgba(45,140,240,.12);color:var(--accent);font-size:.6rem;font-weight:700;cursor:help;position:relative;margin-left:3px;vertical-align:middle;line-height:1;user-select:none}
+.help-tip .tip-text{visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:.7rem;font-weight:400;color:var(--text);white-space:normal;width:220px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.4);pointer-events:none;transition:opacity .15s;line-height:1.35;text-align:left}
+.help-tip:hover .tip-text{visibility:visible;opacity:1}
 .summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(30,46,80,.3);font-size:.88rem}
 .summary-row:last-child{border-bottom:none}
 .summary-row .sr-label{color:var(--muted)}
@@ -456,13 +459,13 @@ const TABS = [
 ];
 
 const INV_SUBTABS = [
-  { id:'reserva', label:'Reserva' },
-  { id:'rendafixa', label:'Renda Fixa' },
-  { id:'tesouro', label:'Tesouro' },
-  { id:'fiis', label:'FIIs' },
-  { id:'acoes', label:'Ações' },
-  { id:'cripto', label:'Cripto' },
-  { id:'daytrade', label:'Day Trade' }
+  { id:'reserva', label:'Reserva', icon:'fa-piggy-bank', tip:'Rendimento de 6% a.a. com liquidez imediata. Ideal para reserva de emergência.' },
+  { id:'rendafixa', label:'Renda Fixa', icon:'fa-file-contract', tip:'CDB, LCI, LCA, CRI, CRA — títulos com regras claras de rendimento. Pós-fixado acompanha o CDI; prefixado tem taxa definida na contratação.' },
+  { id:'tesouro', label:'Tesouro', icon:'fa-landmark-flag', tip:'Títulos públicos federais. Tesouro Selic (pós-fixado, liquidez diária) e Tesouro IPCA+ (inflação + taxa fixa, longo prazo). Risco baixíssimo.' },
+  { id:'fiis', label:'FIIs', icon:'fa-building', tip:'Fundos de Investimento Imobiliário — investem em imóveis e títulos do setor. Pagam dividendos mensais isentos de IR.' },
+  { id:'acoes', label:'Ações', icon:'fa-chart-simple', tip:'Frações do capital de empresas. Você vira sócio. Rendimento por valorização e dividendos. Maior risco e potencial.' },
+  { id:'cripto', label:'Cripto', icon:'fa-coins', tip:'Ativos digitais descentralizados com alta volatilidade. Risco extremamente alto. Invista apenas o que pode perder.' },
+  { id:'daytrade', label:'Day Trade', icon:'fa-arrow-trend-up', tip:'Compra e venda de ativos no mesmo dia. Preço ao vivo a cada 900ms com gráfico de velas. 15% de IR sobre o lucro. Posições liquidadas no fim do mês.' }
 ];
 
 /* ============================================================
@@ -523,6 +526,7 @@ const rand = (a,b) => a + Math.random()*(b-a);
 const randInt = (a,b) => Math.floor(rand(a,b+1));
 const pct = (v) => (v>=0?'+':'')+fmtN(v)+'%';
 const monthLabel = m => { const y=2024+Math.floor((m-1)/12); const mo=((m-1)%12)+1; return mo+'/'+y; };
+const tip = t => `<span class="help-tip">?<span class="tip-text">${t}</span></span>`;
 
 function canTakeJob(j) { return G.month >= j.req.month; }
 
@@ -985,7 +989,7 @@ function renderCarreira() {
 
 // ----- INVESTIMENTOS -----
 function renderInvestimentos() {
-  const subHTML = INV_SUBTABS.map(s => `<div class="sub-tab ${activeInvTab===s.id?'active':''}" onclick="activeInvTab='${s.id}';render()">${s.label}</div>`).join('');
+  const subHTML = INV_SUBTABS.map(s => `<div class="sub-tab ${activeInvTab===s.id?'active':''}" onclick="activeInvTab='${s.id}';render()"><i class="fa-solid ${s.icon}" style="margin-right:4px"></i>${s.label}${s.tip?tip(s.tip):''}</div>`).join('');
   let content = '';
   switch(activeInvTab) {
     case 'reserva': content = renderReserva(); break;
@@ -1006,7 +1010,7 @@ function renderInvestimentos() {
 function renderReserva() {
   const rate = (0.06/12*100);
   const monthlyReturn = G.inv.savings * rate / 100;
-  return `<div class="card"><div class="card-title"><i class="fa-solid fa-piggy-bank"></i> Reserva de Emergência (Poupança)</div>
+  return `<div class="card"><div class="card-title"><i class="fa-solid fa-piggy-bank"></i> Reserva de Emergência (Poupança) ${tip('Rendimento de 6% ao ano. Liquidez imediata — saque a qualquer momento. Ideal para reserva de emergência.' + ' Protegida pelo FGC.')}</div>
     <div class="stat-grid" style="margin-bottom:16px">
       <div class="stat-card"><div class="sc-label">Saldo</div><div class="sc-value sc-green mono">${fmtFull(G.inv.savings)}</div></div>
       <div class="stat-card"><div class="sc-label">Rendimento Mensal</div><div class="sc-value sc-accent mono">${fmtN(rate)}% (${fmtFull(monthlyReturn)})</div></div>
@@ -1021,18 +1025,20 @@ function renderReserva() {
 function renderRendaFixa() {
   const availHTML = FIXED_INCOME.map(fi => {
     let rateStr = fi.type==='pos' ? `${fmtN(G.selic + fi.spread)}% a.a. (CDI ${fmtN(G.selic)}% ${fi.spread>0?'+':' '}${fmtN(fi.spread)}%)` : `${fmtN(fi.rate)}% a.a. (prefixada)`;
-    return `<tr><td style="font-weight:500">${fi.name}</td><td class="mono" style="font-size:.8rem">${rateStr}</td><td>${fi.locked>0?`<span class="badge badge-yellow">${fi.locked} meses</span>`:'<span class="badge badge-green">Líquido</span>'}</td>
+    const fiTip = fi.name.includes('LCI') ? 'Letra de Crédito Imobiliário — isenta de IR para PF. Garantida pelo FGC.' : fi.name.includes('LCA') ? 'Letra de Crédito do Agronegócio — isenta de IR para PF. Garantida pelo FGC.' : fi.name.includes('CRI') ? 'Certificado de Recebíveis Imobiliários — isento de IR para PF.' : fi.name.includes('CRA') ? 'Certificado de Recebíveis do Agronegócio — isento de IR para PF.' : 'Certificado de Depósito Bancário — protegido pelo FGC até R$ 250 mil.';
+    const tipoTip = fi.type==='pos' ? 'Pós-fixado: rendimento atrelado ao CDI. Protege contra alta de juros.' : 'Pré-fixado: taxa definida na contratação. Você sabe exatamente o rendimento.';
+    return `<tr><td style="font-weight:500">${fi.name}${tip(fiTip)}</td><td class="mono" style="font-size:.8rem">${rateStr}${tip(tipoTip)}</td><td>${fi.locked>0?`<span class="badge badge-yellow">${fi.locked} meses</span>`:'<span class="badge badge-green">Líquido</span>'}</td>
       <td><div style="display:flex;gap:4px"><input class="inp inp-sm" type="number" id="fi_${fi.id}" placeholder="R$" min="0" step="1000"><button class="btn btn-green btn-sm" onclick="buyFixedIncome('${fi.id}')">Aplicar</button></div></td></tr>`;
   }).join('');
   const activeHTML = G.inv.fixedIncome.length ? G.inv.fixedIncome.map(inv => `<tr><td style="font-weight:500">${inv.name}</td><td class="mono">${fmtFull(inv.invested)}</td><td class="mono sc-green">${fmtFull(inv.currentValue)}</td><td>${inv.monthsRemaining>0?`<span class="badge badge-yellow">${inv.monthsRemaining} meses</span>`:'<span class="badge badge-green">Vencido</span>'}</td><td class="mono sc-green">${fmtFull(inv.currentValue - inv.invested)}</td></tr>`).join('') : '';
-  return `<div class="card"><div class="card-title"><i class="fa-solid fa-file-contract"></i> Renda Fixa Disponível</div><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Taxa</th><th>Liquidez</th><th>Ação</th></tr></thead><tbody>${availHTML}</tbody></table></div></div>
+  return `<div class="card"><div class="card-title"><i class="fa-solid fa-file-contract"></i> Renda Fixa Disponível ${tip('Títulos de crédito com regras definidas de rendimento. Pós-fixados acompanham o CDI; prefixados têm taxa fixa. CDB, LCI, LCA, CRI e CRA com diferentes garantias e benefícios fiscais.')}</div><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Taxa</th><th>Liquidez</th><th>Ação</th></tr></thead><tbody>${availHTML}</tbody></table></div></div>
     ${G.inv.fixedIncome.length ? `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-lock"></i> Investimentos Ativos</div><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Aplicado</th><th>Valor Atual</th><th>Vencimento</th><th>Rendimento</th></tr></thead><tbody>${activeHTML}</tbody></table></div></div>` : ''}`;
 }
 
 function renderTesouro() {
   const selicRate = G.selic - 0.15;
   const selicMonthly = G.inv.treasurySelic * (selicRate/12/100);
-  let html = `<div class="card"><div class="card-title"><i class="fa-solid fa-landmark-flag"></i> Tesouro Selic (Líquido)</div>
+  let html = `<div class="card"><div class="card-title"><i class="fa-solid fa-landmark-flag"></i> Tesouro Selic (Líquido) ${tip('Título público pós-fixado atrelado à taxa Selic. Liquidez diária, resgate a qualquer momento. Ideal para reserva de emergência com rendimento superior à poupança. Garantido pelo Tesouro Nacional.')}</div>
     <div class="stat-grid" style="margin-bottom:14px">
       <div class="stat-card"><div class="sc-label">Saldo</div><div class="sc-value sc-green mono">${fmtFull(G.inv.treasurySelic)}</div></div>
       <div class="stat-card"><div class="sc-label">Rendimento Mensal</div><div class="sc-value sc-accent mono">${fmtN(selicRate)}% (${fmtFull(selicMonthly)})</div></div>
@@ -1044,11 +1050,10 @@ function renderTesouro() {
   const ipcaOpts = TREASURY.filter(t=>t.type==='ipca');
   const ipcaAvailHTML = ipcaOpts.map(t => {
     const totalRate = G.inflation + t.fixedRate;
-    return `<tr><td style="font-weight:500">${t.name}</td><td class="mono" style="font-size:.8rem">IPCA+ ${fmtN(t.fixedRate)}% = ${fmtN(totalRate)}% a.a.</td><td><span class="badge badge-yellow">${t.locked} meses</span></td>
+    return `<tr><td style="font-weight:500">${t.name}</td><td class="mono" style="font-size:.8rem">IPCA+ ${fmtN(t.fixedRate)}% = ${fmtN(totalRate)}% a.a.${tip('IPCA+ rende a inflação oficial do país mais uma taxa fixa. Protege seu poder de compra no longo prazo. Ideal para objetivos de médio/longo prazo.')}</td><td><span class="badge badge-yellow">${t.locked} meses</span></td>
       <td><div style="display:flex;gap:4px"><input class="inp inp-sm" type="number" id="tip_${t.id}" placeholder="R$" min="0" step="1000"><button class="btn btn-green btn-sm" onclick="buyTreasuryIpca('${t.id}')">Comprar</button></div></td></tr>`;
   }).join('');
-  const ipcaActiveHTML = G.inv.treasuryIpca.length ? G.inv.treasuryIpca.map(inv => `<tr><td style="font-weight:500">${inv.name}</td><td class="mono">${fmtFull(inv.invested)}</td><td class="mono sc-green">${fmtFull(inv.currentValue)}</td><td>${inv.monthsRemaining>0?`<span class="badge badge-yellow">${inv.monthsRemaining} meses</span>`:'<span class="badge badge-green">Vencido</span>'}</td><td class="mono sc-green">${fmtFull(inv.currentValue - inv.invested)}</td></tr>`).join('') : '';
-  html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-shield-halved"></i> Tesouro IPCA+ (Rendimento Real)</div><div class="table-wrap"><table><thead><tr><th>Título</th><th>Taxa</th><th>Prazo</th><th>Ação</th></tr></thead><tbody>${ipcaAvailHTML}</tbody></table></div></div>`;
+  html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-shield-halved"></i> Tesouro IPCA+ (Rendimento Real) ${tip('Título público que paga IPCA (inflação) + juros fixos. Quanto maior o prazo, maior a taxa. Resgate apenas no vencimento. Garantido pelo Tesouro Nacional.')}</div><div class="table-wrap"><table><thead><tr><th>Título</th><th>Taxa</th><th>Prazo</th><th>Ação</th></tr></thead><tbody>${ipcaAvailHTML}</tbody></table></div></div>`;
   if(G.inv.treasuryIpca.length) html += `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-lock"></i> Tesouro IPCA+ Ativos</div><div class="table-wrap"><table><thead><tr><th>Título</th><th>Aplicado</th><th>Valor Atual</th><th>Vencimento</th><th>Rendimento</th></tr></thead><tbody>${ipcaActiveHTML}</tbody></table></div></div>`;
   return html;
 }
@@ -1101,7 +1106,8 @@ function renderVar(assets, key, showDY) {
   }).join('') : '';
 
   const dyHead = showDY ? '<th>Dividendos</th>' : '';
-  return `<div class="card"><div class="card-title"><i class="fa-solid fa-store"></i> Disponíveis para Compra</div>
+  const catTip = key==='stocks' ? tip('Ações representam frações do capital de empresas. Você se torna sócio e tem direito a dividendos. Maior risco e potencial de retorno no longo prazo.') : key==='fiis' ? tip('Fundos de Investimento Imobiliário investem em imóveis (tijolo) ou títulos do mercado imobiliário (papel). Dividendos mensais isentos de IR.') : key==='crypto' ? tip('Criptomoedas são ativos digitais descentralizados com alta volatilidade. Risco extremamente alto. Invista apenas o que pode perder.') : '';
+  return `<div class="card"><div class="card-title"><i class="fa-solid fa-store"></i> Disponíveis para Compra ${catTip}</div>
     <div class="table-wrap"><table><thead><tr><th>Ativo</th><th>Cotação</th><th>Var.</th>${showDY?'<th>DY Mensal</th>':''}<th>Trend</th><th>Ação</th></tr></thead><tbody>${availHTML}</tbody></table></div></div>
     ${activeEntries.length ? `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-briefcase"></i> Suas Posições</div>
     <div class="table-wrap"><table><thead><tr><th>Ativo</th><th>Quantidade</th><th>Preço Médio</th><th>Cotação</th><th>Valor / Resultado</th>${dyHead}<th>Ação</th></tr></thead><tbody>${activeHTML}</tbody></table></div></div>` : ''}`;
@@ -1183,7 +1189,7 @@ function currentDTPrice(ticker) {
   return G.prices[ticker] || 50;
 }
 
-function renderCandleSVG(ticker, candles) {
+function renderCandleSVG(ticker, candles, entryPrice) {
   const W = 200, H = 80, pad = 4;
   const data = candles || G.dailyCandles?.[ticker];
   if(!data || data.length === 0) return '';
@@ -1193,6 +1199,10 @@ function renderCandleSVG(ticker, candles) {
   const candleW = Math.max(3, (W - pad * 2) / DT_DAYS - 1);
   const yPos = p => pad + H - pad * 2 - ((p - lo) / range) * (H - pad * 2);
   let svg = `<svg width="${W}" height="${H}" style="display:block;margin:0 auto"><rect x="0" y="0" width="${W}" height="${H}" fill="none"/>`;
+  if(entryPrice != null && entryPrice >= lo && entryPrice <= hi) {
+    const ey = yPos(entryPrice);
+    svg += `<line x1="${pad}" y1="${ey}" x2="${W-pad}" y2="${ey}" stroke="rgba(45,140,240,.6)" stroke-width="1" stroke-dasharray="3,2"/>`;
+  }
   data.forEach((c, i) => {
     const x = pad + i * (candleW + 1);
     const col = c.close >= c.open ? '#16a34a' : '#dc2626';
@@ -1219,7 +1229,7 @@ function renderDTPanel() {
     <span><i class="fa-solid fa-chart-line"></i> Day Trade ${dtRT ? '<span class="badge badge-green">AO VIVO</span>' : '<span class="badge badge-yellow">FECHADO</span>'}</span>
     <span style="font-size:.78rem;color:var(--muted)">Dia ${day+1}/${DT_DAYS} <span style="color:var(--accent)">${tickPct}%</span></span>
   </div>
-  <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">Compre e venda a qualquer momento no preço ao vivo. Alíquota de <strong style="color:var(--red)">15%</strong> sobre o lucro líquido por ativo. Posições liquidadas ao final do mês.</p>
+  <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">Compre e venda a qualquer momento no preço ao vivo${tip('O preço muda a cada 900ms com base em um gráfico de velas (candlestick). Cada candle representa um dia com abertura, máxima, mínima e fechamento. São 20 dias por mês com 12 ticks por dia.')}. Alíquota de <strong style="color:var(--red)">15%</strong> sobre o lucro líquido por ativo${tip('O imposto de 15% incide sobre o lucro líquido do mês para cada ativo. Prejuízos de um ativo não abatem lucros de outro. A retenção é automática na liquidação mensal.')}. Posições liquidadas ao final do mês.</p>
   ${!dtRT && day >= DT_DAYS-1 ? '<div style="text-align:center;padding:20px;color:var(--yellow)"><i class="fa-solid fa-hourglass-end"></i> Mercado fechado para este mês. Avance o mês para começar um novo ciclo.</div>' : ''}`;
   allAssets.forEach(a => {
     const candles = G.dailyCandles?.[a.ticker];
@@ -1247,7 +1257,7 @@ function renderDTPanel() {
         <span>Máxima: R$ ${cur.high.toFixed(2)}</span>
         <span>Mínima: R$ ${cur.low.toFixed(2)}</span>
       </div>
-      <div class="mt-2">${renderCandleSVG(a.ticker, candles)}</div>
+      <div class="mt-2">${renderCandleSVG(a.ticker, candles, pos.shares !== 0 ? pos.avgPrice : null)}</div>
       ${pos.shares !== 0 ? `<div class="flex-between mt-2" style="font-size:.82rem">
         <span>Posição: <strong>${pos.shares.toFixed(4)}</strong> @ R$ ${pos.avgPrice.toFixed(2)}</span>
         <span style="color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">P&L: R$ ${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)</span>
@@ -1257,7 +1267,8 @@ function renderDTPanel() {
         <input class="inp inp-sm" type="number" id="dt_val_${a.ticker}" placeholder="R$" min="0" step="10" style="width:80px">
         <button class="btn btn-green btn-sm" ${dtRT ? `onclick="dtBuy('${a.ticker}')"` : 'disabled'}><i class="fa-solid fa-arrow-up"></i> Comprar</button>
         <button class="btn btn-red btn-sm" ${dtRT ? `onclick="dtSell('${a.ticker}')"` : 'disabled'}><i class="fa-solid fa-arrow-down"></i> Vender</button>
-        ${pos.shares !== 0 ? `<button class="btn btn-ghost btn-sm" onclick="dtClose('${a.ticker}')"><i class="fa-solid fa-ban"></i> Zerar</button>` : ''}
+        ${dtRT ? `<button class="btn btn-ghost btn-sm" onclick="dtBuyMax('${a.ticker}')"><i class="fa-solid fa-cart-flatbed"></i> Comprar Tudo</button>` : ''}
+        ${pos.shares !== 0 && dtRT ? `<button class="btn btn-ghost btn-sm" onclick="dtSellAll('${a.ticker}')"><i class="fa-solid fa-broom"></i> Vender Tudo</button>` : ''}
         ${pos.shares !== 0 && dtRT ? `<button class="btn btn-ghost btn-sm" onclick="dtInvert('${a.ticker}')"><i class="fa-solid fa-arrows-rotate"></i> Inverter</button>` : ''}
       </div>
       <div style="font-size:.7rem;color:var(--muted);margin-top:4px">Use quantidade OU valor em R$</div>
@@ -1341,6 +1352,8 @@ function dtSell(ticker) {
   }
   const revenue = qty * price;
   if(pos.shares <= 0) {
+    const newShort = Math.abs(pos.shares) + qty;
+    if(newShort * price > G.balance) return toast('Margem insuficiente para venda a descoberto.', 'red');
     const oldShort = Math.abs(pos.shares);
     pos.shares -= qty;
     pos.avgPrice = (oldShort * pos.avgPrice + qty * price) / (oldShort + qty);
@@ -1352,6 +1365,7 @@ function dtSell(ticker) {
     } else {
       const sellLong = pos.shares;
       const remain = qty - sellLong;
+      if(remain * price > G.balance + sellLong * price) return toast('Margem insuficiente.', 'red');
       G.balance += sellLong * price;
       pos.shares = -remain;
       pos.avgPrice = price;
@@ -1361,6 +1375,48 @@ function dtSell(ticker) {
   if(Math.abs(pos.shares) < 0.0001) delete G.dayTrades[ticker];
   else G.dayTrades[ticker] = pos;
   toast(`Venda ${qty.toFixed(4)} ${ticker} a R$ ${price.toFixed(2)}`, 'red');
+  saveGame(); render();
+}
+
+function dtBuyMax(ticker) {
+  const price = currentDTPrice(ticker);
+  if(!price || price <= 0) return toast('Preço indisponível.', 'red');
+  if(!dtRT) return toast('Mercado fechado.', 'red');
+  const maxQty = Math.floor(G.balance / price * 10000) / 10000;
+  if(maxQty <= 0) return toast('Saldo insuficiente.', 'red');
+  const pos = G.dayTrades[ticker] || { shares:0, avgPrice:0 };
+  const cost = maxQty * price;
+  if(pos.shares >= 0) {
+    const oldVal = pos.shares * pos.avgPrice;
+    pos.shares += maxQty;
+    pos.avgPrice = (oldVal + cost) / pos.shares;
+    G.balance -= cost;
+  } else {
+    const absShort = Math.abs(pos.shares);
+    if(maxQty <= absShort) {
+      pos.shares += maxQty;
+    } else {
+      pos.shares = maxQty - absShort;
+      pos.avgPrice = price;
+    }
+    G.balance -= cost;
+  }
+  if(Math.abs(pos.shares) < 0.0001) delete G.dayTrades[ticker];
+  else G.dayTrades[ticker] = pos;
+  toast(`Comprou tudo: ${maxQty.toFixed(4)} ${ticker} a R$ ${price.toFixed(2)}`, 'green');
+  saveGame(); render();
+}
+
+function dtSellAll(ticker) {
+  const pos = G.dayTrades[ticker];
+  if(!pos || pos.shares === 0) return toast('Nada a vender.', 'red');
+  if(!dtRT) return toast('Mercado fechado.', 'red');
+  const price = currentDTPrice(ticker);
+  const qty = pos.shares;
+  const revenue = qty * price;
+  G.balance += revenue;
+  delete G.dayTrades[ticker];
+  toast(`Vendeu tudo: ${Math.abs(qty).toFixed(4)} ${ticker} a R$ ${price.toFixed(2)}`, 'red');
   saveGame(); render();
 }
 
@@ -1380,6 +1436,10 @@ function dtInvert(ticker) {
   if(!pos || pos.shares === 0) return;
   const price = currentDTPrice(ticker);
   const oldShares = pos.shares;
+  if(oldShares > 0) {
+    const newShort = oldShares;
+    if(newShort * price > G.balance) return toast('Margem insuficiente para inverter.', 'red');
+  }
   const pnl = oldShares > 0 ? (price - pos.avgPrice) * oldShares : (pos.avgPrice - price) * Math.abs(oldShares);
   G.balance += oldShares * price;
   const newQty = Math.abs(oldShares);
@@ -1861,7 +1921,7 @@ function renderEmprestimos() {
       <div class="stat-card"><div class="sc-label"><i class="fa-solid fa-calendar-xmark"></i> Parcela Mensal</div><div class="sc-value sc-yellow mono">${fmtFull(monthlyDebt)}</div></div>
     </div>
     <div class="card"><div class="card-title"><i class="fa-solid fa-hand-holding-dollar"></i> Opções de Empréstimo</div>
-      <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Taxa atrelada à SELIC + 5%. Cuidado: juros altos podem levar ao Game Over!</p>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Taxa atrelada à SELIC + 5%. Cuidado: juros altos podem levar ao Game Over!${tip('Empréstimos com juros compostos. Parcela fixa com amortização mensal. Limite de crédito baseado no seu patrimônio líquido. Atraso pode levar à falência.')}</p>
       <div class="table-wrap"><table><thead><tr><th>Valor</th><th>Prazo</th><th>Taxa</th><th>Parcela</th><th>Total Juros</th><th>Ação</th></tr></thead><tbody>${optHTML}</tbody></table></div></div>
     ${G.loans.length ? `<div class="card section-gap"><div class="card-title"><i class="fa-solid fa-file-invoice-dollar"></i> Empréstimos Ativos</div><div class="table-wrap"><table><thead><tr><th>Valor Original</th><th>Saldo Devedor</th><th>Taxa</th><th>Restante</th><th>Parcela</th><th>Ação</th></tr></thead><tbody>${activeHTML}</tbody></table></div></div>` : ''}
   `;
